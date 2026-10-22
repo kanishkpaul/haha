@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local runtime
+.logs/
+.DS_Store
+
+# Per-job inputs and outputs (personal data)
+jobs/*
+!jobs/README.md
+!jobs/done/
+jobs/done/*
+!jobs/done/.gitkeep
+applications/*
+!applications/README.md

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Run a Resume-Matcher tool: bin/rm <tool> [args]  (bin/rm --help lists tools)
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec uv run --quiet --directory "$ROOT/vendor/resume-matcher/apps/backend" resume-matcher "$@"
