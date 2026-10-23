@@ -143,4 +143,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P2.3** | Knockout pre-check: candidate facts (`haha-data/candidate.yaml`) and the opportunity DB's gate decision for the posting; `knockouts.md` with pass / condition / blocker per knockout | rule tests for years, degree, authorisation, location |
 | **P2.4** | Five real postings from the apply-now top 15 through `tailor job` | five valid specs and knockout reports |
 
+**Status (23 Oct 2026):** M2 done. Five live postings (Anthropic, Apollo Research, Prime Intellect, Cohere, METR) fetched across all three ATS APIs; all five specs pass `tailor job --check`; knockout reports: two "possible with conditions" (on-site abroad, degree in progress), three with no knockouts.
+
 M3–M8 phases are added here when each milestone starts.

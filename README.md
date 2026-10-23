@@ -6,7 +6,7 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-stage%200%20works-yellow)
+![status](https://img.shields.io/badge/status-stages%200--1%20work-yellow)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
@@ -68,7 +68,7 @@ flowchart LR
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
 | 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
 
-> **Status:** stage 0 works: `uv run tailor bank` compiles the career record into a citable evidence bank. Stages 1–7 are still docstrings and dreams, and politely say so.
+> **Status:** stages 0–1 work: `uv run tailor bank` compiles the career record into a citable evidence bank, and `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check. Stages 2–7 are still docstrings and dreams, and politely say so.
 
 ## 🚀 Running it
 
@@ -92,13 +92,27 @@ uv run tailor bank
 
 `uv run tailor bank --annotate` writes one review prompt per entry to `../haha-data/work/annotate/`; the reviewed overlays go in `../haha-data/annotations/` and are re-applied on every build.
 
-**4. Make sure the plumbing is plumbed:**
+**4. Read a job** (Greenhouse, Ashby or Lever URL, or a `.md` file):
+
+```bash
+uv run tailor job https://job-boards.greenhouse.io/anthropic/jobs/5198255008
+```
+
+This writes `posting.md` and a prompt pack to `../haha-data/applications/<company>-<role>-<date>/`. Claude fills `jobspec.json` from the pack; then
+
+```bash
+uv run tailor job --check anthropic-research-engineer
+```
+
+checks that every requirement quotes the posting verbatim, and writes `knockouts.md` (visa, location, degree, years) using `../haha-data/candidate.yaml` and the opportunity database's gate.
+
+**5. Make sure the plumbing is plumbed:**
 
 ```bash
 uv run pytest
 ```
 
-**5. Put the robot back to sleep:**
+**6. Put the robot back to sleep:**
 
 ```bash
 scripts/stop-servers.sh
