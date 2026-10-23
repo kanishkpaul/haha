@@ -10,6 +10,7 @@ Follow the upstream skill at `vendor/resume-matcher/.claude/skills/resume-matche
 
 - **Command:** use `bin/rm <tool> [arguments]` from this repo's root instead of `uv run --directory apps/backend resume-matcher …`.
 - **Setup is done.** Agent mode is on in `vendor/resume-matcher/apps/backend/.env`. If `curl -s http://127.0.0.1:3000/api/v1/health` fails, start the servers with `scripts/start-servers.sh` (or the `rm-backend` / `rm-frontend` launch configs).
-- **Scratch files** go in `jobs/.work/` here (gitignored), always passed as absolute paths.
-- **Masters come from this repo, not from a resume import.** The five track masters are built from the evidence bank into `data/masters/*.json` and loaded with `create_master_resume`. Never create a master from the full career record: Resume-Matcher keeps every entry and bullet of its source, so selection must happen first (see `CLAUDE.md`).
+- **Scratch files** go in `../haha-data/work/` (outside git), always passed as absolute paths.
+- **Resume-Matcher judges; haha selects.** Per job, haha picks, writes and renders the resume itself, then uses `score_resume` (accepts an unsaved draft) and `parse_check_file` (any PDF). RM's tailor flow keeps every entry of its master, so it cannot do per-job selection.
+- **Masters come from the evidence bank, not from a resume import.** Optional track masters are built into `../haha-data/masters/*.json` and loaded with `create_master_resume`. Never create a master from the full career record: Resume-Matcher keeps every entry and bullet of its source, so selection must happen first (see `CLAUDE.md`).
 - **Facts:** the career record at `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md` is the source of truth. Keep each metric's qualifying conditions (section 15) and the attribution rules in section 12.3.

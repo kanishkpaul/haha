@@ -16,5 +16,7 @@ Tailors Kanishk Paul's resume to one job. See `README.md` for layout and stages.
 
 ## Conventions
 
-- Python 3.13, managed with `uv`. Package code in `src/career_tailor/`, one module per stage.
-- Personal inputs and outputs live in `jobs/` and `applications/`, which are gitignored.
+- Python 3.13, managed with `uv`. Package code in `src/career_tailor/`, one module per stage. Lint with `uv run ruff check`.
+- **No personal data in this repo.** The evidence bank, masters, jobs, applications and scratch files live in `../haha-data/` (`HAHA_DATA_DIR`; see `paths.py`). Tests use the synthetic record in `tests/fixtures/`; tests marked `local` use the real record and skip when it is absent.
+- Corrections to record facts go in `../haha-data/record_updates.yaml`, not in the record: `../evidence/` pins the record's SHA-256 and line numbers.
+- Build plan and phases: `docs/plans/2026-10-23-build-plan.md`. Each phase is committed and pushed once its checks pass.

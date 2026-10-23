@@ -3,16 +3,15 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 
 # Local runtime
 .logs/
 .DS_Store
 
-# Per-job inputs and outputs (personal data)
-jobs/*
-!jobs/README.md
-!jobs/done/
-jobs/done/*
-!jobs/done/.gitkeep
-applications/*
-!applications/README.md
+# Personal data lives in ../haha-data (HAHA_DATA_DIR), never here.
+# These catch anything written to the old in-repo locations by mistake.
+/data/
+/jobs/
+/applications/
+/haha-data/

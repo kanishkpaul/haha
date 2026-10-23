@@ -101,17 +101,25 @@ In the Claude desktop app, the `rm-backend` and `rm-frontend` launch configs do 
 ## 🗺️ Where things live
 
 ```text
-haha/
-├── src/career_tailor/   one module per stage (currently: vibes + docstrings)
-├── data/evidence/       the evidence bank, every claim with receipts
-├── data/masters/        five role-track masters (Resume-Matcher JSON)
-├── jobs/                job descriptions go in here, done/ when finished   🙈 gitignored
-├── applications/        one folder per application                         🙈 gitignored
+haha/                    code only, safe to open-source
+├── src/career_tailor/   one module per stage
+├── tests/               unit tests run on a synthetic record; `local` tests use yours
 ├── templates/           RenderCV/Typst theme, if we outgrow the built-ins
 ├── vendor/resume-matcher/  Resume-Matcher submodule (agent mode, no API key)
 ├── bin/rm               run any Resume-Matcher tool: bin/rm --help
 └── scripts/             start/stop the servers
+
+../haha-data/            personal data, never committed (HAHA_DATA_DIR)    🙈
+├── bank/                the evidence bank, every claim with receipts
+├── annotations/         reviewed overlays that survive bank rebuilds
+├── record_updates.yaml  dated corrections that supersede a record fact
+├── masters/             optional Resume-Matcher track masters
+├── jobs/                job descriptions go in here, done/ when finished
+├── applications/        one folder per application
+└── work/                prompt packs and scratch files
 ```
+
+The career record is read from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md` (override with `HAHA_CAREER_RECORD`).
 
 ## 📜 House rules
 
