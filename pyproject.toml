@@ -15,7 +15,7 @@ dependencies = [
 tailor = "career_tailor.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3"]
+dev = ["pytest>=8.3", "ruff>=0.7"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,3 +26,11 @@ packages = ["src/career_tailor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["local: needs the real career record or Resume-Matcher; skipped when absent"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -4,6 +4,8 @@ import importlib
 import json
 import subprocess
 
+import pytest
+
 from career_tailor import paths
 
 STAGES = ["bank", "jobspec", "match", "selection", "masters", "write", "verify", "render", "ats", "cli"]
@@ -36,10 +38,12 @@ def test_no_personal_data_dirs_in_repo():
         assert not (paths.REPO / name).exists(), f"{name}/ belongs in HAHA_DATA_DIR"
 
 
+@pytest.mark.local
 def test_career_record_present():
     assert paths.load().career_record.is_file()
 
 
+@pytest.mark.local
 def test_resume_matcher_cli_responds():
     out = subprocess.run([str(paths.RM_CLI), "get_status"], capture_output=True, text=True, check=True)
     assert json.loads(out.stdout)["max_master_resumes"] == 5
