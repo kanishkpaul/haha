@@ -9,7 +9,8 @@ from career_tailor import bank, cli, paths
 
 def proof_cards(path, record_sha, refs):
     path.parent.mkdir(parents=True, exist_ok=True)
-    cards = [{"id": cid, "master_refs": [{"line_start": a, "line_end": b}]} for cid, a, b in refs]
+    cards = [{"id": cid, "artifact_coverage": cov, "master_refs": [{"line_start": a, "line_end": b}]}
+             for cid, a, b, cov in refs]  # fmt: skip
     path.write_text(json.dumps({"metadata": {"master_sha256": record_sha}, "entries": cards}))
 
 
@@ -38,19 +39,21 @@ def test_proof_cards_link_by_line_range(data_dir, mini_record):
     p = paths.load()
     lines = mini_record.read_text().split("\n")
     start = lines.index("### EXP-01 · Example University — Research Collaborator, Speech") + 1
-    proof_cards(p.proof_entries, bank.sha256(mini_record), [("CAREER-001", start, start + 12)])
+    proof_cards(p.proof_entries, bank.sha256(mini_record), [("CAREER-001", start, start + 12, "personal account only")])
     built = bank.compile_bank(p)
     assert built.claim("EXP-01.b1").evidence_ids == ["CAREER-001"]
     assert built.claim("ENG-01.b1").evidence_ids == []
     assert built.manifest.proof_linked
+    assert any("2 claims map to proof cards; 2 of them map only" in n for n in built.notes["info"])
 
 
 def test_proof_cards_for_another_record_version_are_skipped(data_dir):
     p = paths.load()
-    proof_cards(p.proof_entries, "0" * 64, [("CAREER-001", 1, 999)])
+    proof_cards(p.proof_entries, "0" * 64, [("CAREER-001", 1, 999, "partial")])
     built = bank.compile_bank(p)
     assert not built.manifest.proof_linked
     assert any("different record version" in n for n in built.notes["problems"])
+    assert any("Ghost result" in n for n in built.notes["info"])
 
 
 def test_staleness(data_dir, tmp_path, monkeypatch, mini_record):
@@ -76,7 +79,8 @@ def test_report_flags_gaps(data_dir):
     p = paths.load()
     text = bank.report(bank.compile_bank(p))
     assert "**LEAD-02** has no claims" in text
-    assert "unresolved item “Holographic engine”" in text
+    assert "no entry matched “Holographic engine”" in text
+    assert text.index("## For information") > text.index("## Needs attention")
     assert "| ENG-01 | Clawbot | May 2030 – Oct 2030 |" in text
 
 

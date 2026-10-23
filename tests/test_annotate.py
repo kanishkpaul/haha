@@ -101,8 +101,23 @@ def test_extra_claims_must_be_verbatim_from_notes(data_dir):
         "Founded a reading circle with participants from two universities.",
         "Founded a reading circle with 500 members.",
     ]})  # fmt: skip
+    write_annotation(p.annotations, {"entry_id": "RES-01", "claim_skills": {"RES-01.r1": ["corpus building"]}})
     built = bank.compile_bank(p)
     claims = built.entries["LEAD-02"].claims
     assert [c.id for c in claims] == ["LEAD-02.n1"]
     assert claims[0].source == built.entries["LEAD-02"].source
+    assert [m.text for m in claims[0].metrics] == []
     assert any("not verbatim" in n for n in built.notes["problems"])
+    assert "corpus building" in built.entries["RES-01"].skills  # entry skills follow claim skills
+
+
+def test_promoted_claims_get_metrics_and_conditions(data_dir):
+    p = paths.load()
+    write_annotation(p.annotations, {"entry_id": "EXP-01", "extra_claims": ["10,000 utterances are 5,000 pairs"],
+                                     "claim_skills": {"EXP-01.n1": ["corpus building"]}})  # fmt: skip
+    built = bank.compile_bank(p)
+    promoted = built.claim("EXP-01.n1")
+    assert [m.text for m in promoted.metrics] == ["10,000", "5,000"]
+    assert any("12-language collection" in c for c in promoted.conditions)
+    assert promoted.skills == ["corpus building"]
+    assert not [n for n in built.notes["problems"] if n.startswith("annotation")]

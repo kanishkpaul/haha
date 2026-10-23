@@ -14,7 +14,6 @@ from pathlib import Path
 
 import yaml
 
-from . import numbers
 from .models import Annotation, Claim, DateRange, Entry, SkillArea
 from .textutil import md_plain
 
@@ -74,6 +73,25 @@ def load_annotations(directory: Path) -> list[Annotation]:
             for f in sorted(directory.glob("*.yaml"))]  # fmt: skip
 
 
+def add_extra_claims(entries: list[Entry], annotations: list[Annotation]) -> list[str]:
+    """Promote verbatim note or field sentences to claims. Runs before metrics, conditions,
+    tagging and proof links, so promoted claims get all of them. Returns problems."""
+    by_id = {e.id: e for e in entries}
+    problems = []
+    for a in annotations:
+        entry = by_id.get(a.entry_id)
+        if entry is None or not a.extra_claims:
+            continue
+        source_text = md_plain(" ".join([*entry.notes.values(), *entry.fields.values()]))
+        for n, text in enumerate(a.extra_claims, start=1):
+            if md_plain(text) not in source_text:
+                problems.append(f"annotation {a.entry_id}: extra claim is not verbatim from its notes: {text[:60]}")
+                continue
+            entry.claims.append(Claim(id=f"{entry.id}.n{n}", entry_id=entry.id, kind="fact", text=text,
+                                      label="from notes", source=entry.source))  # fmt: skip
+    return problems
+
+
 def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> list[str]:
     """Apply overlays in place. Returns problems (unknown entries or claims)."""
     by_id = {e.id: e for e in entries}
@@ -106,14 +124,8 @@ def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> li
                 claims[cid].skills = list(skills)
             else:
                 problems.append(f"annotation {a.entry_id}: unknown claim {cid}")
-        source_text = md_plain(" ".join([*entry.notes.values(), *entry.fields.values()]))
-        for n, text in enumerate(a.extra_claims, start=1):
-            if md_plain(text) not in source_text:
-                problems.append(f"annotation {a.entry_id}: extra claim is not verbatim from its notes: {text[:60]}")
-                continue
-            entry.claims.append(Claim(id=f"{entry.id}.n{n}", entry_id=entry.id, kind="fact", text=text,
-                                      label="from notes", source=entry.source,
-                                      metrics=numbers.extract_numbers(md_plain(text))))  # fmt: skip
+        if not a.skills:
+            entry.skills = list(dict.fromkeys([*entry.skills, *(s for c in entry.claims for s in c.skills)]))
         for cid in a.hide_claims:
             if cid in claims:
                 claims[cid].show_on_resume = False

@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 
 from . import record as record_mod
-from .annotate import apply_annotations, load_annotations, tag
+from .annotate import add_extra_claims, apply_annotations, load_annotations, tag
 from .extract import extract, load_updates
 from .models import BankManifest, Entry, MetricRow, Profile, Repo, SkillArea, Track
 from .paths import Paths
@@ -50,24 +50,33 @@ def sha256(path: Path) -> str:
 # ---------------------------------------------------------------- provenance
 
 
-def link_proof(entries: list[Entry], proof_entries: Path, record_sha: str) -> str | None:
-    """Attach proof-card ids to claims whose record lines they cover. Returns a problem, if any."""
+def link_proof(entries: list[Entry], proof_entries: Path, record_sha: str) -> tuple[str | None, str | None]:
+    """Attach proof-card ids to claims whose record lines they cover.
+
+    A link means the claim maps to a proof card, not that the card holds proof yet.
+    Returns (problem, coverage summary)."""
     if not proof_entries.is_file():
-        return f"no proof cards at {proof_entries}; claims carry no evidence ids"
+        return f"no proof cards at {proof_entries}; claims carry no evidence ids", None
     data = json.loads(proof_entries.read_text(encoding="utf-8"))
     if data.get("metadata", {}).get("master_sha256") != record_sha:
-        return "proof cards were built against a different record version; evidence ids skipped"
+        return "proof cards were built against a different record version; evidence ids skipped", None
+    coverage = {card["id"]: card.get("artifact_coverage", "unknown") for card in data["entries"]}
     spans = [
         (card["id"], ref["line_start"], ref["line_end"]) for card in data["entries"] for ref in card["master_refs"]
     ]
+    account_only = linked = 0
     for entry in entries:
         for claim in entry.claims:
             if claim.source is None:
                 continue
             a, b = claim.source.line_start, claim.source.line_end
-            ids = [cid for cid, s, e in spans if s <= a and b <= e]
-            claim.evidence_ids = list(dict.fromkeys(ids))
-    return None
+            claim.evidence_ids = list(dict.fromkeys(cid for cid, s, e in spans if s <= a and b <= e))
+            if claim.evidence_ids:
+                linked += 1
+                account_only += all(coverage[c] == "personal account only" for c in claim.evidence_ids)
+    summary = (f"{linked} claims map to proof cards; {account_only} of them map only to cards still backed by the "
+               f"personal account alone. Add proof in {proof_entries.parent} and rerun `tailor bank`.")  # fmt: skip
+    return None, summary
 
 
 # ---------------------------------------------------------------- build
@@ -77,13 +86,18 @@ def compile_bank(p: Paths) -> Bank:
     rec = record_mod.read(p.career_record)
     record_sha = sha256(p.career_record)
     profile, entries, notes = extract(rec, load_updates(p.record_updates))
+    annotations = load_annotations(p.annotations)
+    notes["problems"] += add_extra_claims(entries, annotations)
     tables = read_tables(rec)
     attach_metrics(entries)
-    notes["problems"] += attach(tables, entries)
+    notes["info"] = attach(tables, entries)
+    notes["info"] += [f"Track “{t.target}”: no entry matched “{u}” by name; annotation tracks may cover it."
+                      for t in tables.tracks for u in t.unresolved]  # fmt: skip
     tag(entries, tables.skills)
-    notes["problems"] += apply_annotations(entries, load_annotations(p.annotations))
-    if problem := link_proof(entries, p.proof_entries, record_sha):
-        notes["problems"].append(problem)
+    notes["problems"] += apply_annotations(entries, annotations)
+    problem, coverage = link_proof(entries, p.proof_entries, record_sha)
+    notes["problems"] += [problem] if problem else []
+    notes["info"] += [coverage] if coverage else []
     notes["skills"] = tables.skill_notes
     notes["metrics"] = tables.metric_notes
     manifest = BankManifest(
@@ -161,9 +175,9 @@ def stale_reason(bank: Bank, p: Paths) -> str | None:
     if sha256(p.career_record) != bank.manifest.record_sha256:
         return "the career record changed since the bank was built; run `uv run tailor bank`"
     built = datetime.fromisoformat(bank.manifest.built_at).timestamp()
-    inputs = [p.record_updates, *sorted(p.annotations.glob("*.yaml"))]
+    inputs = [p.record_updates, p.proof_entries, *sorted(p.annotations.glob("*.yaml"))]
     if any(f.is_file() and f.stat().st_mtime > built for f in inputs):
-        return "record updates or annotations changed since the bank was built; run `uv run tailor bank`"
+        return "record updates, proof cards or annotations changed since the bank was built; run `uv run tailor bank`"
     return None
 
 
@@ -181,7 +195,7 @@ def report(bank: Bank) -> str:
         f"Built {m.built_at} from `{m.record_path}` (SHA-256 `{m.record_sha256[:12]}…`).",
         f"**{len(entries)} entries, {len(claims)} claims** ({count['bullet',]} bullets, "
         f"{count['lead',]} lead statements, {count['row',]} table rows, {count['fact', 'update']} facts). "
-        f"{sum(bool(c.evidence_ids) for c in claims)} claims link to proof cards; "
+        f"{sum(bool(c.evidence_ids) for c in claims)} claims map to a proof card (mapping, not verification); "
         f"{sum(bool(c.conditions) for c in claims)} carry metric conditions.",
         "",
         "## Needs attention",
@@ -192,13 +206,17 @@ def report(bank: Bank) -> str:
         current = [c for c in e.claims if c.status == "current"]
         if not current:
             issues.append(f"- **{e.id}** has no claims; its content is in notes only ({', '.join(e.notes) or 'none'}).")
-        if e.kind not in ("award", "selection") and (e.dates is None or e.dates.display is None):
-            issues.append(f"- **{e.id}** dates not parsed: {e.dates.raw if e.dates else 'no date field'}")
+        has_content = any(c.kind in ("bullet", "lead") for c in current)
+        if e.dates is not None and e.dates.display is None:
+            issues.append(f"- **{e.id}** dates not parsed: {e.dates.raw}")
+        elif e.dates is None and has_content and e.kind in ("experience", "research", "engineering"):
+            issues.append(f"- **{e.id}** has no dates.")
         if not e.skills and e.kind in ("experience", "research", "engineering"):
             issues.append(f"- **{e.id}** has no skills yet (annotation pass).")
-    issues += [f"- Track **{t.target}**: unresolved item “{u}”." for t in bank.tables.tracks for u in t.unresolved]
     issues += [f"- {p}" for p in bank.notes.get("problems", [])]
     lines += issues or ["Nothing."]
+    if info := bank.notes.get("info", []):
+        lines += ["", "## For information", ""] + [f"- {i}" for i in info]
     lines += [
         "",
         "## Entries",

@@ -149,7 +149,7 @@ def _note(entry: Entry, label: str, text: str) -> None:
 
 
 def attach(t: Tables, entries: list[Entry]) -> list[str]:
-    """Attach repo visibility, metric conditions and track membership. Returns unmatched items."""
+    """Attach repo visibility, metric conditions and track membership. Returns metric rows kept as notes."""
     problems: list[str] = []
     repos = {r.name: r for r in t.repos}
     for e in entries:
