@@ -136,6 +136,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P1.5** | Skill tagging from the section 11 vocabulary; annotation overlay that survives rebuilds; `tailor bank --annotate` prompt packs | overlay merge tests; packs written for every entry |
 | **P1.6** | Overlay `extra_claims`: promote verbatim note or field sentences to claims, for entries whose content sits only in notes; then the annotation pass | verbatim check rejects paraphrase; real build has no annotation problems |
 
-**Status (23 Oct 2026):** P0.1–P1.5 done. The real bank holds 63 entries and 214 claims; 213 claims link to proof cards. Left in M1: the annotation pass itself (fill `haha-data/annotations/` from the 54 prompt packs, then review).
+**Status (23 Oct 2026):** M0 and M1 done. The real bank holds 63 entries and 221 claims after the annotation pass (54 overlays in `haha-data/annotations/`, reviewed in `haha-data/ANNOTATION_REVIEW.md`). 220 claims map to a proof card; that is a mapping, not verification, and proof collection for the account-only cards continues in `../evidence/`.
 
 M2–M8 phases are added here when each milestone starts.
