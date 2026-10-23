@@ -8,6 +8,7 @@ Override with environment variables:
 - HAHA_DATA_DIR: the data directory.
 - HAHA_CAREER_RECORD: the master career record (Markdown).
 - HAHA_PROOF_DIR: the proof-card folder whose entries.json maps claims to sources.
+- HAHA_OUTPUTS_DIR: the folder holding the dated opportunity-database outputs.
 """
 
 import os
@@ -21,6 +22,7 @@ TEMPLATES_DIR = REPO / "templates"
 _DEFAULT_DATA = REPO.parent / "haha-data"
 _DEFAULT_RECORD = REPO.parent / "outputs" / "KANISHK_PAUL_MASTER_CAREER_RECORD.md"
 _DEFAULT_PROOF = REPO.parent / "evidence"
+_DEFAULT_OUTPUTS = REPO.parent / "outputs"
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -33,6 +35,7 @@ class Paths:
     data: Path
     career_record: Path
     proof_dir: Path
+    outputs: Path = _DEFAULT_OUTPUTS
 
     @property
     def bank(self) -> Path:
@@ -64,6 +67,10 @@ class Paths:
         return self.data / "work"
 
     @property
+    def candidate(self) -> Path:
+        return self.data / "candidate.yaml"
+
+    @property
     def proof_entries(self) -> Path:
         return self.proof_dir / "entries.json"
 
@@ -74,4 +81,5 @@ def load() -> Paths:
         data=_env_path("HAHA_DATA_DIR", _DEFAULT_DATA),
         career_record=_env_path("HAHA_CAREER_RECORD", _DEFAULT_RECORD),
         proof_dir=_env_path("HAHA_PROOF_DIR", _DEFAULT_PROOF),
+        outputs=_env_path("HAHA_OUTPUTS_DIR", _DEFAULT_OUTPUTS),
     )

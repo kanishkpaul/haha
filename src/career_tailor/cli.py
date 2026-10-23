@@ -4,7 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import annotate, bank, ingest, jobspec, paths
+from . import annotate, bank, ingest, jobspec, knockouts, opportunities, paths
+from .models import Posting
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -60,9 +61,23 @@ def cmd_job(args: argparse.Namespace) -> int:
         if folder is None:
             print(f"error: no single application folder matches {args.check!r} in {p.applications}", file=sys.stderr)
             return 1
-        report, _ = jobspec.check_folder(folder)
+        report, spec = jobspec.check_folder(folder)
         print(jobspec.render_check(report, None).split("\n", 2)[2].strip())
-        return 0 if report.ok else 1
+        if not report.ok or spec is None:
+            return 1
+        posting = Posting.model_validate_json((folder / "posting.json").read_text(encoding="utf-8"))
+        candidate = knockouts.load_candidate(p.candidate)
+        if candidate is None:
+            print(f"warning: no {p.candidate}; knockouts not judged", file=sys.stderr)
+        results = knockouts.evaluate(spec, posting, candidate) if candidate else []
+        match = opportunities.find(p.outputs, [posting.url, spec.url])
+        (folder / knockouts.KNOCKOUT_FILE).write_text(knockouts.render(spec, posting, results, candidate, match),
+                                                      encoding="utf-8")  # fmt: skip
+        counts = {s: sum(k.status == s for k in results) for s in ("blocker", "condition", "check", "pass")}
+        print(
+            "knockouts: " + ", ".join(f"{n} {s}" for s, n in counts.items()) + f" -> {folder / knockouts.KNOCKOUT_FILE}"
+        )
+        return 0
     if not args.source:
         print("error: give a posting URL or file, or --check FOLDER", file=sys.stderr)
         return 2
@@ -74,6 +89,8 @@ def cmd_job(args: argparse.Namespace) -> int:
         return 1
     if args.company:
         posting.company = args.company
+    elif (match := opportunities.find(p.outputs, [posting.url, args.source])) and match.organization:
+        posting.company = match.organization  # boards give slugs like "apolloresearch"
     folder = ingest.save_posting(p.applications, posting, raw)
     pack = jobspec.write_pack(folder)
     print(f"job: {posting.title} at {posting.company} ({posting.ats}) -> {folder}")

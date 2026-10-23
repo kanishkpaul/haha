@@ -219,6 +219,45 @@ class JobSpec(Model):
     notes: str = ""
 
 
+class Candidate(Model):
+    """Eligibility facts the career record doesn't hold (HAHA_DATA_DIR/candidate.yaml)."""
+
+    location: str
+    country: str
+    authorized_to_work_in: list[str] = Field(default_factory=list)
+    degree_level: Literal["none", "bachelor", "master", "phd"] = "bachelor"
+    degree_status: Literal["in progress", "completed"] = "in progress"
+    degree_expected: str = ""  # "2027-06"
+    full_time_experience_years: float = 0
+    earliest_full_time_start: str = ""  # "2027-07"
+    open_to_relocation: bool | None = None  # None: not decided
+    remote_ok: bool = True
+    assumptions: list[str] = Field(default_factory=list)  # facts here that were inferred, not stated
+
+
+class Knockout(Model):
+    requirement_id: str
+    quote: str
+    status: Literal["pass", "condition", "blocker", "check"]
+    reason: str
+
+
+class OpportunityMatch(Model):
+    """The opportunity database's record and gate decision for this posting."""
+
+    id: str
+    name: str
+    organization: str
+    gate: str = ""
+    cls: str = ""
+    score: str = ""
+    condition: str = ""
+    top_risk: str = ""
+    mobility: str = ""
+    lead_items: str = ""
+    deadline: str = ""
+
+
 class Support(Model):
     claim_id: str
     strength: Literal["strong", "partial"]

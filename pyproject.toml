@@ -35,3 +35,6 @@ extend-exclude = ["vendor"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["SIM905"]  # word lists written as one string read better
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]  # fixtures and expected strings read better unwrapped
