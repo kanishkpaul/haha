@@ -138,4 +138,9 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (23 Oct 2026):** M0 and M1 done. The real bank holds 63 entries and 221 claims after the annotation pass (54 overlays in `haha-data/annotations/`, reviewed in `haha-data/ANNOTATION_REVIEW.md`). 220 claims map to a proof card; that is a mapping, not verification, and proof collection for the account-only cards continues in `../evidence/`.
 
-M2–M8 phases are added here when each milestone starts.
+| **P2.1** | `ingest.py`: detect the ATS from a URL, fetch Greenhouse/Ashby/Lever postings from their public APIs, convert HTML to text, read local files; `tailor job <url|file>` writes `posting.json`, `posting.md` and `raw.json` to the application folder | fixture tests per vendor; three live postings fetched |
+| **P2.2** | `jobspec.py`: a prompt pack per posting; Claude writes `jobspec.json`; validation requires every requirement to quote the posting verbatim, the exact title, and keywords found in the text | grounding tests reject paraphrased quotes |
+| **P2.3** | Knockout pre-check: candidate facts (`haha-data/candidate.yaml`) and the opportunity DB's gate decision for the posting; `knockouts.md` with pass / condition / blocker per knockout | rule tests for years, degree, authorisation, location |
+| **P2.4** | Five real postings from the apply-now top 15 through `tailor job` | five valid specs and knockout reports |
+
+M3–M8 phases are added here when each milestone starts.

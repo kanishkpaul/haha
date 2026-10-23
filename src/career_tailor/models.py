@@ -166,6 +166,26 @@ class BankManifest(Model):
 # ---------------------------------------------------------------- jobs onward
 
 
+class Posting(Model):
+    """A job posting as fetched: normalised fields plus the description as plain text."""
+
+    key: str  # "greenhouse:anthropic:5198255008", "file:<stem>"
+    ats: Literal["ashby", "greenhouse", "lever", "workday", "other"]
+    org: str  # board token or file prefix
+    company: str
+    title: str
+    url: str = ""
+    api_url: str = ""
+    location: str = ""
+    workplace: str = ""
+    employment_type: str = ""
+    compensation: str = ""
+    department: str = ""
+    published: str = ""
+    fetched_at: str
+    text: str
+
+
 class Requirement(Model):
     id: str
     text: str

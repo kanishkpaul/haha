@@ -2,8 +2,9 @@
 
 import argparse
 import sys
+from pathlib import Path
 
-from . import annotate, bank, paths
+from . import annotate, bank, ingest, paths
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -43,6 +44,21 @@ def cmd_bank(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_job(args: argparse.Namespace) -> int:
+    p = paths.load()
+    source = Path(args.source).expanduser()
+    try:
+        posting, raw = ingest.from_file(source) if source.is_file() else ingest.from_url(args.source)
+    except (ValueError, LookupError, OSError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    if args.company:
+        posting.company = args.company
+    folder = ingest.save_posting(p.applications, posting, raw)
+    print(f"job: {posting.title} at {posting.company} ({posting.ats}) -> {folder}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailor", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -53,9 +69,14 @@ def main(argv: list[str] | None = None) -> None:
             cmd.add_argument(
                 "--annotate", action="store_true", help="write annotation prompt packs from the saved bank"
             )
+        if name == "job":
+            cmd.add_argument("source", help="posting URL (Greenhouse, Ashby, Lever) or a job-description file")
+            cmd.add_argument("--company", help="company name to use instead of the board's")
     args = parser.parse_args(argv)
     if args.command == "bank":
         raise SystemExit(cmd_bank(args))
+    if args.command == "job":
+        raise SystemExit(cmd_job(args))
     raise SystemExit(f"tailor {args.command}: not implemented yet")
 
 
