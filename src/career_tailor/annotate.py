@@ -14,7 +14,8 @@ from pathlib import Path
 
 import yaml
 
-from .models import Annotation, DateRange, Entry, SkillArea
+from . import numbers
+from .models import Annotation, Claim, DateRange, Entry, SkillArea
 from .textutil import md_plain
 
 # Single words that are not skills on their own once a slash phrase is expanded.
@@ -105,6 +106,14 @@ def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> li
                 claims[cid].skills = list(skills)
             else:
                 problems.append(f"annotation {a.entry_id}: unknown claim {cid}")
+        source_text = md_plain(" ".join([*entry.notes.values(), *entry.fields.values()]))
+        for n, text in enumerate(a.extra_claims, start=1):
+            if md_plain(text) not in source_text:
+                problems.append(f"annotation {a.entry_id}: extra claim is not verbatim from its notes: {text[:60]}")
+                continue
+            entry.claims.append(Claim(id=f"{entry.id}.n{n}", entry_id=entry.id, kind="fact", text=text,
+                                      label="from notes", source=entry.source,
+                                      metrics=numbers.extract_numbers(md_plain(text))))  # fmt: skip
         for cid in a.hide_claims:
             if cid in claims:
                 claims[cid].show_on_resume = False
@@ -136,6 +145,8 @@ Rules (from the career record, sections 11, 12.3 and 15):
 - `hide_claims`: claim ids that must never appear on a resume (confidential, superseded, or a
   plan rather than a result). Leave out claims that are merely weak.
 - `tracks`: role-track targets this entry should lead or support, from the tracks list below.
+- `extra_claims`: sentences copied word for word from this entry's notes or fields that state a
+  result or contribution, for entries whose content sits only in notes. Never paraphrase.
 
 ## Parsed entry
 

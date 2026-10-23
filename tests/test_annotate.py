@@ -93,3 +93,16 @@ def test_cli_writes_annotation_packs(data_dir, capsys):
     assert "# Annotate ENG-01" in text and str(data_dir / "annotations" / "ENG-01.yaml") in text
     assert "Arnesh Banerjee and Arnesh Gade are different people" in text
     assert '"hide_claims"' in text and "ML evaluation" in text
+
+
+def test_extra_claims_must_be_verbatim_from_notes(data_dir):
+    p = paths.load()
+    write_annotation(p.annotations, {"entry_id": "LEAD-02", "extra_claims": [
+        "Founded a reading circle with participants from two universities.",
+        "Founded a reading circle with 500 members.",
+    ]})  # fmt: skip
+    built = bank.compile_bank(p)
+    claims = built.entries["LEAD-02"].claims
+    assert [c.id for c in claims] == ["LEAD-02.n1"]
+    assert claims[0].source == built.entries["LEAD-02"].source
+    assert any("not verbatim" in n for n in built.notes["problems"])
