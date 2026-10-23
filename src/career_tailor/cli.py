@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import annotate, bank, ingest, paths
+from . import annotate, bank, ingest, jobspec, paths
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -44,8 +44,28 @@ def cmd_bank(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_application(p: paths.Paths, name: str) -> Path | None:
+    """An application folder from a path, a folder name, or a unique name prefix."""
+    direct = Path(name).expanduser()
+    if (direct / "posting.json").is_file():
+        return direct
+    matches = sorted(f for f in p.applications.glob(f"{name}*") if (f / "posting.json").is_file())
+    return matches[0] if len(matches) == 1 else None
+
+
 def cmd_job(args: argparse.Namespace) -> int:
     p = paths.load()
+    if args.check:
+        folder = resolve_application(p, args.check)
+        if folder is None:
+            print(f"error: no single application folder matches {args.check!r} in {p.applications}", file=sys.stderr)
+            return 1
+        report, _ = jobspec.check_folder(folder)
+        print(jobspec.render_check(report, None).split("\n", 2)[2].strip())
+        return 0 if report.ok else 1
+    if not args.source:
+        print("error: give a posting URL or file, or --check FOLDER", file=sys.stderr)
+        return 2
     source = Path(args.source).expanduser()
     try:
         posting, raw = ingest.from_file(source) if source.is_file() else ingest.from_url(args.source)
@@ -55,7 +75,9 @@ def cmd_job(args: argparse.Namespace) -> int:
     if args.company:
         posting.company = args.company
     folder = ingest.save_posting(p.applications, posting, raw)
+    pack = jobspec.write_pack(folder)
     print(f"job: {posting.title} at {posting.company} ({posting.ats}) -> {folder}")
+    print(f"next: fill {folder / jobspec.SPEC_FILE} from {pack.name}, then `tailor job --check {folder.name}`")
     return 0
 
 
@@ -70,7 +92,12 @@ def main(argv: list[str] | None = None) -> None:
                 "--annotate", action="store_true", help="write annotation prompt packs from the saved bank"
             )
         if name == "job":
-            cmd.add_argument("source", help="posting URL (Greenhouse, Ashby, Lever) or a job-description file")
+            cmd.add_argument(
+                "source", nargs="?", help="posting URL (Greenhouse, Ashby, Lever) or a job-description file"
+            )
+            cmd.add_argument(
+                "--check", metavar="FOLDER", help="validate an application's jobspec.json against its posting"
+            )
             cmd.add_argument("--company", help="company name to use instead of the board's")
     args = parser.parse_args(argv)
     if args.command == "bank":

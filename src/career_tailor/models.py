@@ -186,23 +186,37 @@ class Posting(Model):
     text: str
 
 
+RequirementKind = Literal["basic", "preferred", "knockout", "responsibility"]
+RequirementCategory = Literal[
+    "skill", "experience", "education", "authorization", "location", "availability", "domain", "trait", "other"
+]
+
+
 class Requirement(Model):
-    id: str
-    text: str
-    kind: Literal["basic", "preferred", "knockout"]
-    weight: float = 1.0
+    """One requirement, quoting the posting verbatim so it can be checked against the source."""
+
+    id: str  # R1, R2, ...
+    text: str  # the requirement in a few words, e.g. "Strong Python"
+    quote: str  # exact span copied from the posting text
+    kind: RequirementKind
+    category: RequirementCategory = "skill"
+    weight: int = Field(default=2, ge=1, le=3)  # 3 core, 2 standard, 1 minor
     keywords: list[str] = Field(default_factory=list)
 
 
 class JobSpec(Model):
+    key: str  # the posting's key
     company: str
-    title: str
+    title: str  # exactly as posted
     url: str = ""
     ats: Literal["ashby", "greenhouse", "lever", "workday", "other"] = "other"
-    seniority: str = ""
+    seniority: str = ""  # e.g. "new grad", "mid", "senior", "not stated"
     location: str = ""
+    workplace: str = ""  # onsite / hybrid / remote, as posted
+    pages: int = Field(default=1, ge=1, le=3)  # resume length the role calls for
     requirements: list[Requirement] = Field(default_factory=list)
-    keywords: dict[str, list[str]] = Field(default_factory=dict)  # canonical term -> synonyms
+    keywords: dict[str, list[str]] = Field(default_factory=dict)  # canonical term -> synonyms and acronym forms
+    notes: str = ""
 
 
 class Support(Model):
