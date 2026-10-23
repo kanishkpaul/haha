@@ -20,6 +20,7 @@ from career_tailor.numbers import extract_numbers, is_strong, is_unique, tokens
         ("100+ developers in eight hours on 4-bit models", ["100", "4"]),
         ("Upward:downward 58.7:1", ["58.7", "1"]),
         ("Amazon ML Challenge 2026 at 250 Hz", ["2026", "250 Hz"]),
+        ("on an M5/16 GB Mac: 0 unsafe acts/6 scenes", ["16 GB", "0", "6"]),
     ],
 )
 def test_extract_numbers(text, expected):

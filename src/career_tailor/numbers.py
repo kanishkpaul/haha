@@ -12,7 +12,7 @@ from .models import Metric
 _UNITS = r"%|×|x(?![a-z])|[KMB](?![a-z])|tok/s|MiB|KiB|GiB|MB|GB|TB|ms|μs|Hz|FPS|s(?![a-z])"
 _NUMBER = re.compile(
     rf"""
-    (?<![\w.])(?<![\w.]/)                  # not inside an identifier or path
+    (?<![\w.])                                      # not inside an identifier
     (?P<cur>[₹$€£])?
     (?P<num>\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|\d+(?:\.\d+)?)
     (?:/(?P<den>\d{{1,3}}(?:,\d{{3}})+|\d+)(?![\w.]))?  # fraction: 54/55, 4,334/4,334
