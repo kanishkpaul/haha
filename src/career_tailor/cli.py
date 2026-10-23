@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from . import bank, paths
+from . import annotate, bank, paths
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -17,6 +17,13 @@ COMMANDS = {
 
 def cmd_bank(args: argparse.Namespace) -> int:
     p = paths.load()
+    if args.annotate:
+        b = bank.load(p.bank)
+        tracks = [t.target for t in b.tables.tracks]
+        packs = annotate.write_packs(list(b.entries.values()), b.tables.skills, tracks, p.annotations,
+                                     p.work / "annotate")  # fmt: skip
+        print(f"annotate: {len(packs)} prompt packs -> {p.work / 'annotate'}; write overlays to {p.annotations}")
+        return 0
     if args.report:
         b = bank.load(p.bank)
         if reason := bank.stale_reason(b, p):
@@ -43,6 +50,9 @@ def main(argv: list[str] | None = None) -> None:
         cmd = sub.add_parser(name, help=help_text)
         if name == "bank":
             cmd.add_argument("--report", action="store_true", help="rewrite REPORT.md from the saved bank only")
+            cmd.add_argument(
+                "--annotate", action="store_true", help="write annotation prompt packs from the saved bank"
+            )
     args = parser.parse_args(argv)
     if args.command == "bank":
         raise SystemExit(cmd_bank(args))

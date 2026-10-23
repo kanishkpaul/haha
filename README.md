@@ -6,7 +6,7 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-skeleton-lightgrey)
+![status](https://img.shields.io/badge/status-stage%200%20works-yellow)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
@@ -68,7 +68,7 @@ flowchart LR
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
 | 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
 
-> **Status:** scaffolding only. Every stage is a well-written docstring and a dream. `uv run tailor <command>` will politely tell you it isn't implemented yet.
+> **Status:** stage 0 works: `uv run tailor bank` compiles the career record into a citable evidence bank. Stages 1–7 are still docstrings and dreams, and politely say so.
 
 ## 🚀 Running it
 
@@ -84,13 +84,21 @@ scripts/start-servers.sh
 bin/rm get_status
 ```
 
-**3. Make sure the plumbing is plumbed:**
+**3. Build the evidence bank** (writes `../haha-data/bank/` and its `REPORT.md`):
+
+```bash
+uv run tailor bank
+```
+
+`uv run tailor bank --annotate` writes one review prompt per entry to `../haha-data/work/annotate/`; the reviewed overlays go in `../haha-data/annotations/` and are re-applied on every build.
+
+**4. Make sure the plumbing is plumbed:**
 
 ```bash
 uv run pytest
 ```
 
-**4. Put the robot back to sleep:**
+**5. Put the robot back to sleep:**
 
 ```bash
 scripts/stop-servers.sh

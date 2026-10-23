@@ -135,4 +135,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P1.4** | Bank YAML store, provenance links to `evidence/entries.json`, record SHA staleness check, `tailor bank` and `tailor bank --report` | real bank builds; report reviewed |
 | **P1.5** | Skill tagging from the section 11 vocabulary; annotation overlay that survives rebuilds; `tailor bank --annotate` prompt packs | overlay merge tests; packs written for every entry |
 
+**Status (23 Oct 2026):** P0.1–P1.5 done. The real bank holds 63 entries and 214 claims; 213 claims link to proof cards. Left in M1: the annotation pass itself (fill `haha-data/annotations/` from the 54 prompt packs, then review).
+
 M2–M8 phases are added here when each milestone starts.

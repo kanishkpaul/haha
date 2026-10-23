@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml
 
 from . import record as record_mod
+from .annotate import apply_annotations, load_annotations, tag
 from .extract import extract, load_updates
 from .models import BankManifest, Entry, MetricRow, Profile, Repo, SkillArea, Track
 from .paths import Paths
@@ -79,6 +80,8 @@ def compile_bank(p: Paths) -> Bank:
     tables = read_tables(rec)
     attach_metrics(entries)
     notes["problems"] += attach(tables, entries)
+    tag(entries, tables.skills)
+    notes["problems"] += apply_annotations(entries, load_annotations(p.annotations))
     if problem := link_proof(entries, p.proof_entries, record_sha):
         notes["problems"].append(problem)
     notes["skills"] = tables.skill_notes
