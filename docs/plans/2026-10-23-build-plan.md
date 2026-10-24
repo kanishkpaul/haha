@@ -80,7 +80,7 @@ Order: build the foundations and a high-quality bank first, because every later 
 - **CP-SAT model:** a boolean per entry and per claim. Line cost comes from character width at the template's font and measure.
 - **Constraints:** one-page budget (or two for research roles); required sections (header, education, ≥1 experience); bullet limits per entry; no evidence used twice; at most N projects.
 - **Objective:** weighted requirement coverage (basic weighted about 3× preferred), impact (metrics with conditions), recency, and track fit.
-- **Output:** `plan.md` explaining why each item was chosen and what was left out. You approve or edit it, and `tailor plan --apply-edits` re-solves with your pins and bans.
+- **Output:** `plan.md` explaining why each item was chosen and what was left out. You approve it or write pins and bans in `plan.edits.yaml`, which `tailor plan` applies on every run.
 
 ### M5 · Write (`tailor write`) (1½ days)
 - **Prompt pack per bullet:** source claim, conditions that must survive, the job's vocabulary for the matched requirement, and Google X-Y-Z framing.

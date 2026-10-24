@@ -4,7 +4,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths
+from pydantic import ValidationError
+
+from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection
 from .models import Posting
 
 COMMANDS = {
@@ -136,6 +138,20 @@ def cmd_plan(args: argparse.Namespace) -> int:
         f"gap report: {verdicts['strong']} supported, {verdicts['partial']} weak, {verdicts['none']} unsupported"
         + (f"; basic coverage {basic:.0%}" if basic is not None else "")
         + f" -> {folder / match.GAP_FILE}"
+    )
+    try:
+        edits = selection.load_edits(folder)
+        sel = selection.solve(b, spec, m, edits)
+    except (ValidationError, selection.SelectionError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    (folder / selection.SELECTION_FILE).write_text(sel.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    (folder / selection.PLAN_FILE).write_text(selection.render_plan(b, spec, m, sel), encoding="utf-8")
+    lost = [r for r, v in sel.covered.items() if v != next(c.verdict for c in m.coverage if c.requirement_id == r)]
+    print(
+        f"plan: {len(sel.picks)} entries, about {sel.lines_used:g} of {sel.lines_budget:g} lines"
+        + (f"; lost to the budget: {', '.join(lost)}" if lost else "; nothing matched was lost")
+        + f" -> {folder / selection.PLAN_FILE}"
     )
     return 0
 

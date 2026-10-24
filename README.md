@@ -6,7 +6,7 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-stages%200--2%20work-yellow)
+![status](https://img.shields.io/badge/status-stages%200--3%20work-yellow)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
@@ -68,7 +68,7 @@ flowchart LR
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
 | 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
 
-> **Status:** stages 0–2 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank and writes an honest gap report. Stages 3–7 are still docstrings and dreams, and politely say so.
+> **Status:** stages 0–2 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page. Stages 4–7 are still docstrings and dreams, and politely say so.
 
 ## 🚀 Running it
 
@@ -112,7 +112,7 @@ checks that every requirement quotes the posting verbatim, and writes `knockouts
 uv run tailor plan anthropic-research-engineer
 ```
 
-The first run retrieves candidate claims for each requirement and writes `match.prompt.md`. Claude fills `match.json` (verdicts, with every support quoting a claim verbatim); the second run validates it and writes `gap_report.md`: supported, weakly supported (Unknown risk) and unsupported requirements. Unsupported ones never reach the resume.
+The first run retrieves candidate claims for each requirement and writes `match.prompt.md`. Claude fills `match.json` (verdicts, with every support quoting a claim verbatim); the second run validates it and writes `gap_report.md` (supported, weakly supported and unsupported requirements; unsupported ones never reach the resume) and `plan.md`: what goes on the page, chosen by an OR-Tools optimiser for coverage within the page budget, and what was left out and why. Pin or ban entries in `plan.edits.yaml` and rerun to change it.
 
 **6. Make sure the plumbing is plumbed:**
 

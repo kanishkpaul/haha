@@ -1,6 +1,6 @@
 import pytest
 
-from career_tailor import bank, cli, ingest, jobspec, match, paths
+from career_tailor import bank, cli, ingest, jobspec, match, paths, selection
 from career_tailor.models import Coverage, JobSpec, Match, Posting, Requirement, Support
 
 
@@ -241,8 +241,45 @@ def test_cli_plan_writes_pack_then_gap_report(data_dir, capsys):
     with pytest.raises(SystemExit) as done:
         cli.main(["plan", folder.name])
     assert done.value.code == 0
-    assert "gap report: 1 supported, 1 weak, 0 unsupported; basic coverage 75%" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "gap report: 1 supported, 1 weak, 0 unsupported; basic coverage 75%" in out
+    assert "; nothing matched was lost" in out
     assert (folder / match.GAP_FILE).read_text().startswith("# Gap report: ML Engineer, Evaluation at Acme")
+    plan = (folder / selection.PLAN_FILE).read_text()
+    assert plan.startswith("# Plan: ML Engineer, Evaluation at Acme")
+    assert "- `EXP-01.b1` (2 lines; proof none; R1) Built a reproducible evaluation" in plan
+    assert "## Education" in plan and "## Change this plan" in plan
+    saved = selection.Selection.model_validate_json((folder / selection.SELECTION_FILE).read_text())
+    assert saved.covered == {"R1": "strong", "R2": "partial"}
+
+
+def test_cli_plan_applies_edits(data_dir, capsys):
+    p = paths.load()
+    bank.save(bank.compile_bank(p), p.bank)
+    folder = application(p)
+    (folder / match.MATCH_FILE).write_text(good_match().model_dump_json())
+    (folder / selection.EDITS_FILE).write_text("pin: [ENG-03.r1]\nban: [EXP-01]\n")
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 0
+    assert "lost to the budget: R1" in capsys.readouterr().out
+    plan = (folder / selection.PLAN_FILE).read_text()
+    assert "Edits applied: pinned ENG-03.r1; banned EXP-01." in plan
+    assert (
+        "| EXP-01 · Example University — Research Collaborator, Speech, Sep 2030 – Present | banned in plan.edits.yaml | R1 |"
+        in plan
+    )
+    assert "Lost to the page budget or your edits: R1 Reproducible evaluation (strong → none)." in plan
+
+    (folder / selection.EDITS_FILE).write_text("pin: [ENG-42]\n")
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 1
+    assert "can't go on a resume: ENG-42" in capsys.readouterr().err
+    (folder / selection.EDITS_FILE).write_text("pins: [ENG-01]\n")
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 1 and "pins" in capsys.readouterr().err
 
 
 def test_cli_plan_rejects_an_ungrounded_match(data_dir, capsys):

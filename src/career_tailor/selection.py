@@ -9,7 +9,8 @@ estimates until the renderer (M7) measures real lines.
 `solve` picks entries and claims with CP-SAT: a boolean per entry and per claim,
 the page budget and section rules as constraints, and an objective led by
 weighted requirement coverage from `match.json`, then proof, metrics, recency
-and fit to the job's track.
+and fit to the job's track. `render_plan` explains the result in `plan.md`; your
+pins and bans go in `plan.edits.yaml` and are applied on every run.
 """
 
 import math
@@ -17,14 +18,20 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
+from pathlib import Path
 
+import yaml
 from ortools.sat.python import cp_model
 
 from . import numbers
 from .bank import Bank
-from .match import eligible
+from .match import eligible, entry_label, weighted_coverage
 from .models import Claim, Entry, JobSpec, Match, Pick, PlanEdits, Selection
 from .textutil import md_plain
+
+SELECTION_FILE = "selection.json"
+PLAN_FILE = "plan.md"
+EDITS_FILE = "plan.edits.yaml"
 
 SECTIONS = {
     "experience": "Experience",
@@ -293,7 +300,7 @@ def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, t
         quality = PROOF_VALUE[c.proof] + (6 if c.metrics else 0) + (4 if c.kind == "lead" else 0)
         quality += 15 if cid in lead else 8 if cid in support else 0
         if ".n" in cid:  # promoted from the entry's notes: supporting detail, not a headline bullet
-            quality -= 4
+            quality -= 8
         if entries[c.entry_id].kind in ONE_LINE_KINDS:
             quality += 15 if _PLACED.search(md_plain(c.text)) else 0
         value.append(quality * y[cid])
@@ -358,3 +365,94 @@ def _excluded(bank: Bank, m: Match, edits: PlanEdits, picked: set[str]) -> dict[
                          if set(side) & own for c in other if c in picked})  # fmt: skip
         out[entry_id] = f"same work as {', '.join(rivals)}" if rivals else "page budget"
     return out
+
+
+# ---------------------------------------------------------------- plan
+
+
+def load_edits(folder: Path) -> PlanEdits:
+    path = folder / EDITS_FILE
+    if not path.is_file():
+        return PlanEdits()
+    return PlanEdits.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+
+
+def _coverage_line(spec: JobSpec, m: Match, sel: Selection) -> str:
+    placed = [c.model_copy(update={"verdict": sel.covered.get(c.requirement_id, "none")}) for c in m.coverage]
+    after = m.model_copy(update={"coverage": placed})
+    parts = []
+    for kind, label in (("basic", "basic"), ("preferred", "preferred"), ("responsibility", "responsibilities")):
+        share, best = weighted_coverage(spec, after, kind), weighted_coverage(spec, m, kind)
+        if share is not None:
+            parts.append(f"{label} {share:.0%}" + (f" (matched {best:.0%})" if best != share else ""))
+    return "Coverage on the page (strong counts fully, partial half): " + ", ".join(parts) + "."
+
+
+def render_plan(bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> str:
+    reqs = {r.id: r for r in spec.requirements}
+    verdict = {c.requirement_id: c.verdict for c in m.coverage}
+    supports: dict[str, list[str]] = defaultdict(list)
+    for cov in m.coverage:
+        for sup in cov.support:
+            supports[sup.claim_id].append(cov.requirement_id)
+    page = "page" if sel.pages == 1 else "pages"
+    lines = [
+        f"# Plan: {spec.title} at {spec.company}", "",
+        f"{sel.paper.capitalize() if sel.paper == 'letter' else 'A4'}, {sel.pages} {page}, about {sel.lines_used:g} "
+        f"of {sel.lines_budget:g} lines (estimated until rendering). Track: **{sel.track}**.", "",
+        _coverage_line(spec, m, sel), "",
+    ]  # fmt: skip
+    lost = [r for r, v in sel.covered.items() if v != verdict.get(r)]
+    if lost:
+        changes = "; ".join(f"{r} {reqs[r].text} ({verdict[r]} → {sel.covered[r]})" for r in lost)
+        lines += [f"Lost to the page budget or your edits: {changes}.", ""]
+    if sel.edits.pin or sel.edits.ban or sel.edits.pages:
+        applied = [f"pinned {', '.join(sel.edits.pin)}" if sel.edits.pin else "",
+                   f"banned {', '.join(sel.edits.ban)}" if sel.edits.ban else "",
+                   f"{sel.edits.pages} {page}" if sel.edits.pages else ""]  # fmt: skip
+        lines += ["Edits applied: " + "; ".join(a for a in applied if a) + ".", ""]
+    edu = bank.entries.get("EDU-01")
+    if edu:
+        lines += ["## Education", "", f"- {entry_label(edu)} (always shown)", ""]
+    section = None
+    for pick in sel.picks:
+        entry = bank.entries[pick.entry_id]
+        if pick.section != section:
+            if section is not None and lines[-1]:
+                lines.append("")
+            section = pick.section
+            lines += [f"## {section}", ""]
+        one_line = entry.kind in ONE_LINE_KINDS
+        if not one_line:
+            team = " (team work)" if entry.team else ""
+            lines += [f"### {entry_label(entry)}{team}", ""]
+        for cid in pick.claim_ids:
+            claim = bank.claim(cid)
+            covers = ", ".join(sorted(set(supports.get(cid, [])), key=lambda r: (len(r), r)))
+            facts = [f"{pick.lines[cid]} line" + ("s" if pick.lines[cid] > 1 else ""), f"proof {claim.proof}"]
+            if covers:
+                facts.append(covers)
+            prefix = f"{entry.name}: " if one_line else ""
+            lines.append(f"- `{cid}` ({'; '.join(facts)}) {prefix}{display_text(claim)}")
+        if not one_line:
+            lines.append("")
+    if lines[-1]:
+        lines.append("")
+    lines += ["## Skills", "", "Written in the next stage from the skills bank, for this track.", ""]
+    if sel.excluded:
+        lines += ["## Left out", "", "| Entry | Why | Would support |", "|---|---|---|"]
+        for entry_id, why in sel.excluded.items():
+            would = sorted({r for c in bank.entries[entry_id].claims for r in supports.get(c.id, [])},
+                           key=lambda r: (len(r), r))  # fmt: skip
+            lines.append(f"| {entry_label(bank.entries[entry_id])} | {why} | {', '.join(would)} |")
+        lines.append("")
+    lines += [
+        "## Change this plan", "",
+        f"Write `{EDITS_FILE}` next to this file, then run `uv run tailor plan` again:", "",
+        "```yaml",
+        "pin: [RES-06, ENG-02.b4]   # entries or claims that must appear",
+        "ban: [AWD-07]              # entries or claims that must not",
+        "pages: 1                   # optional: override the page count",
+        "```", "",
+    ]  # fmt: skip
+    return "\n".join(lines)

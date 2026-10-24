@@ -327,7 +327,7 @@ def _claim_line(bank: Bank, claim: Claim) -> str:
     return f"`{claim.id}` {claim_text(claim)} *({'; '.join(facts)})*"
 
 
-def _entry_label(entry: Entry) -> str:
+def entry_label(entry: Entry) -> str:
     dates = f", {entry.dates.display}" if entry.dates and entry.dates.display else ""
     subtitle = f" — {entry.subtitle}" if entry.subtitle else ""
     return f"{entry.id} · {entry.name}{subtitle}{dates}"
@@ -394,7 +394,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) ->
     appendix, current = [], None
     for entry, claim in eligible(bank):
         if entry.id != current:
-            appendix += ["", f"**{_entry_label(entry)}**" + (" (team work)" if entry.team else "")]
+            appendix += ["", f"**{entry_label(entry)}**" + (" (team work)" if entry.team else "")]
             current = entry.id
         appendix.append(f"- {_claim_line(bank, claim)}")
     targets = [t.target for t in bank.tables.tracks]
@@ -516,7 +516,7 @@ def gap_report(spec: JobSpec, m: Match, bank: Bank, retrieval: Retrieval | None 
         lines += ["## Evidence used most", "", "Entries by the number of requirements they support:", ""]
         for entry_id, rids in sorted(supported.items(), key=lambda kv: -len(kv[1])):
             rids = sorted(rids, key=_req_order)
-            lines.append(f"- {_entry_label(bank.entries[entry_id])}: {len(rids)} ({', '.join(rids)})")
+            lines.append(f"- {entry_label(bank.entries[entry_id])}: {len(rids)} ({', '.join(rids)})")
         lines.append("")
     return "\n".join(lines)
 
