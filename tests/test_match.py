@@ -1,7 +1,7 @@
 import pytest
 
-from career_tailor import bank, match, paths
-from career_tailor.models import Coverage, JobSpec, Match, Requirement, Support
+from career_tailor import bank, cli, ingest, jobspec, match, paths
+from career_tailor.models import Coverage, JobSpec, Match, Posting, Requirement, Support
 
 
 @pytest.fixture
@@ -166,6 +166,87 @@ def test_pack_lists_requirements_hits_and_every_claim(mini_bank, tmp_path):
     eligible = len(match.eligible(mini_bank))
     assert pack.split("## Every eligible claim")[1].count("\n- `") == eligible
     assert (tmp_path / match.HITS_FILE).is_file()
+
+
+def test_weighted_coverage_counts_partial_half():
+    s = spec(R_EVAL, R_AGENT.model_copy(update={"weight": 3}), R_LOCAL.model_copy(update={"kind": "preferred"}))
+    m = good_match()
+    assert match.weighted_coverage(s, m, "basic") == pytest.approx((2 * 1 + 3 * 0.5) / 5)
+    assert match.weighted_coverage(s, m, "preferred") == 0.0  # R3 not judged counts as none
+    assert match.weighted_coverage(s, m, "responsibility") is None
+
+
+def test_gap_report_sorts_requirements_into_tiers(mini_bank):
+    s = spec(R_EVAL, R_AGENT, R_LOCAL, R_KO)
+    m = good_match()
+    m.coverage.append(Coverage(requirement_id="R3", verdict="none", note="no local inference shown"))
+    text = match.gap_report(s, m, mini_bank, match.retrieve(mini_bank, s))
+    supported = text.split("## Supported")[1].split("## Weakly")[0]
+    weak = text.split("## Weakly supported (Unknown risk)")[1].split("## Unsupported")[0]
+    unsupported = text.split("## Unsupported (never written into the resume)")[1].split("##")[0]
+    assert "| R1 | basic | 2 | Reproducible evaluation | `EXP-01.b1` Example University" in supported
+    assert "| R2 |" in weak and "(partial)" in weak and "terminal, not GUI |" in weak
+    assert "| R3 | basic | 2 | Local inference | no local inference shown |" in unsupported
+    assert "Screener view of the 3 basic requirements: 1 Meets, 1 Unknown, 1 Does not meet." in text
+    assert "Weighted coverage (strong counts fully, partial half): basic 50%." in text
+    assert "- R4: “In-person in London”" in text
+    assert "Track: **ML evaluation**." in text
+
+
+def test_gap_report_flags_account_only_proof(mini_bank):
+    mini_bank.claim("EXP-01.b1").proof = "account"
+    text = match.gap_report(spec(R_EVAL, R_AGENT), good_match(), mini_bank)
+    assert "## Resting on your account alone" in text and "- R1 (Reproducible evaluation)" in text
+
+
+POSTING_TEXT = """## Requirements
+
+- We want people who build reproducible evaluations.
+- Prior experience building browser agents.
+- In-person in London three days a week.
+"""
+
+
+def application(p):
+    posting = Posting(key="test:acme:1", ats="lever", org="acme", company="Acme", title="ML Engineer, Evaluation",
+                      url="https://jobs.lever.co/acme/1", fetched_at="2030-01-01T00:00:00+00:00", text=POSTING_TEXT)  # fmt: skip
+    folder = ingest.save_posting(p.applications, posting, {})
+    (folder / jobspec.SPEC_FILE).write_text(spec(R_EVAL, R_AGENT, R_KO).model_dump_json())
+    return folder
+
+
+def test_cli_plan_writes_pack_then_gap_report(data_dir, capsys):
+    p = paths.load()
+    bank.save(bank.compile_bank(p), p.bank)
+    folder = application(p)
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 0
+    out = capsys.readouterr().out
+    assert "suggested track 'ML evaluation'" in out and f"next: fill {folder / match.MATCH_FILE}" in out
+    assert (folder / match.PACK_FILE).is_file() and not (folder / match.GAP_FILE).exists()
+
+    (folder / match.MATCH_FILE).write_text(good_match().model_dump_json())
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 0
+    assert "gap report: 1 supported, 1 weak, 0 unsupported; basic coverage 75%" in capsys.readouterr().out
+    assert (folder / match.GAP_FILE).read_text().startswith("# Gap report: ML Engineer, Evaluation at Acme")
+
+
+def test_cli_plan_rejects_an_ungrounded_match(data_dir, capsys):
+    p = paths.load()
+    bank.save(bank.compile_bank(p), p.bank)
+    folder = application(p)
+    bad = good_match()
+    bad.coverage[0].support[0].quote = "Led evaluation at a frontier lab"
+    (folder / match.MATCH_FILE).write_text(bad.model_dump_json())
+    with pytest.raises(SystemExit) as done:
+        cli.main(["plan", folder.name])
+    assert done.value.code == 1
+    assert "error: [quote] R1 quote is not verbatim from EXP-01.b1" in capsys.readouterr().out
+    assert not (folder / match.GAP_FILE).exists()
+    assert "**Fix the errors below" in (folder / match.CHECK_FILE).read_text()
 
 
 @pytest.mark.local

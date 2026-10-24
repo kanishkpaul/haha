@@ -8,6 +8,10 @@ Judgement is LLM work: `write_pack` lists each requirement with its retrieved
 claims (and every other eligible claim), and Claude writes `match.json`. Each
 support quotes the claim verbatim; `validate` checks the quotes, the claim ids
 and that verdicts agree with their supports.
+
+`gap_report` sorts requirements into supported, weakly supported (a screener
+may mark them Unknown) and unsupported. Unsupported requirements are never
+written into the resume.
 """
 
 import json
@@ -19,12 +23,27 @@ from pathlib import Path
 from .annotate import Tagger
 from .bank import Bank
 from .jobspec import norm
-from .models import CheckReport, Claim, Entry, Finding, Hit, JobSpec, Match, Requirement, Retrieval, Track
+from .models import (
+    CheckReport,
+    Claim,
+    Coverage,
+    Entry,
+    Finding,
+    Hit,
+    JobSpec,
+    Match,
+    ProofStrength,
+    Requirement,
+    Retrieval,
+    Track,
+)
 from .textutil import md_plain
 
 MATCH_FILE = "match.json"
 PACK_FILE = "match.prompt.md"
 HITS_FILE = "match.hits.json"
+CHECK_FILE = "match.check.md"
+GAP_FILE = "gap_report.md"
 
 TOP_K = 8
 MAX_SUPPORT = 4
@@ -388,3 +407,122 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) ->
     ), encoding="utf-8")  # fmt: skip
     (folder / HITS_FILE).write_text(retrieval.model_dump_json(indent=2), encoding="utf-8")
     return pack
+
+
+# ---------------------------------------------------------------- gap report
+
+_SCORE = {"strong": 1.0, "partial": 0.5, "none": 0.0}
+_SCREENER = {"strong": "Meets", "partial": "Unknown", "none": "Does not meet"}
+_PROOF_ORDER: list[ProofStrength] = ["collected", "accepted", "account", "none"]
+
+
+def weighted_coverage(spec: JobSpec, m: Match, kind: str) -> float | None:
+    """Share of a kind's weight that is covered: strong counts fully, partial half."""
+    verdicts = {c.requirement_id: c.verdict for c in m.coverage}
+    reqs = [r for r in spec.requirements if r.kind == kind]
+    total = sum(r.weight for r in reqs)
+    if not total:
+        return None
+    return sum(r.weight * _SCORE[verdicts.get(r.id, "none")] for r in reqs) / total
+
+
+def best_proof(bank: Bank, cov: Coverage) -> ProofStrength:
+    """The strongest proof among the supports that carry the verdict."""
+    carrying = [s for s in cov.support if s.strength == cov.verdict] or cov.support
+    found = [bank.claim(s.claim_id).proof for s in carrying]
+    return min(found, key=_PROOF_ORDER.index, default="none")
+
+
+def _cell(text: str) -> str:
+    return " ".join(text.replace("|", "\\|").split())
+
+
+def _evidence(bank: Bank, cov: Coverage) -> str:
+    parts = []
+    for sup in cov.support:
+        entry = bank.entries[bank.claim(sup.claim_id).entry_id]
+        mark = "" if sup.strength == "strong" else " (partial)"
+        parts.append(f"`{sup.claim_id}` {entry.name}{mark}: “{_cell(sup.quote)}”")
+    return "<br>".join(parts)
+
+
+def gap_report(spec: JobSpec, m: Match, bank: Bank, retrieval: Retrieval | None = None) -> str:
+    reqs = {r.id: r for r in spec.requirements}
+    covs = sorted(m.coverage, key=lambda c: (-reqs[c.requirement_id].weight, _req_order(c.requirement_id)))
+    lines = [f"# Gap report: {spec.title} at {spec.company}", ""]
+    suggested = retrieval.tracks[0] if retrieval and retrieval.tracks else ""
+    track = f"Track: **{m.track}**" + (
+        f" (retrieval suggested {suggested})" if suggested and suggested != m.track else ""
+    )
+    lines += [track + ".", ""]
+    shares = []
+    for kind, label in (("basic", "basic"), ("preferred", "preferred"), ("responsibility", "responsibilities")):
+        share = weighted_coverage(spec, m, kind)
+        if share is not None:
+            shares.append(f"{label} {share:.0%}")
+    lines += ["Weighted coverage (strong counts fully, partial half): " + ", ".join(shares) + ".", ""]
+    basic = [c for c in covs if reqs[c.requirement_id].kind == "basic"]
+    counts = Counter(_SCREENER[c.verdict] for c in basic)
+    screener = ", ".join(f"{counts[v]} {v}" for v in ("Meets", "Unknown", "Does not meet"))
+    lines += [f"Screener view of the {len(basic)} basic requirements: {screener}.", ""]
+
+    def table(title: str, intro: str, items: list[Coverage], with_note: bool) -> None:
+        lines.extend([f"## {title}", "", intro, ""])
+        if not items:
+            lines.extend(["None.", ""])
+            return
+        head = "| Req | Kind | Weight | Ask | Evidence | Proof |" + (" Missing |" if with_note else "")
+        lines.extend([head, "|---" * (7 if with_note else 6) + "|"])
+        for c in items:
+            r = reqs[c.requirement_id]
+            row = f"| {r.id} | {r.kind} | {r.weight} | {_cell(r.text)} | {_evidence(bank, c)} | {best_proof(bank, c)} |"
+            lines.append(row + (f" {_cell(c.note)} |" if with_note else ""))
+        lines.append("")
+
+    table("Supported", "A screener should mark these Meets.", [c for c in covs if c.verdict == "strong"], False)
+    table("Weakly supported (Unknown risk)",
+          "Related evidence only. A screener may mark these Unknown; the resume should state the closest "
+          "evidence plainly, in the posting's words where they are true.",
+          [c for c in covs if c.verdict == "partial"], True)  # fmt: skip
+    unsupported = [c for c in covs if c.verdict == "none"]
+    lines += ["## Unsupported (never written into the resume)", ""]
+    if unsupported:
+        lines += ["| Req | Kind | Weight | Ask | Missing |", "|---|---|---|---|---|"]
+        for c in unsupported:
+            r = reqs[c.requirement_id]
+            lines.append(f"| {r.id} | {r.kind} | {r.weight} | {_cell(r.text)} | {_cell(c.note)} |")
+        lines += ["", "If you do have this experience, add it to the career record (or `record_updates.yaml`) "
+                      "and rebuild the bank first."]  # fmt: skip
+    else:
+        lines.append("None.")
+    lines.append("")
+    weak_proof = [c for c in covs if c.verdict != "none" and best_proof(bank, c) == "account"]
+    if weak_proof:
+        lines += ["## Resting on your account alone", "",
+                  "These verdicts have no collected or accepted source behind them. Be ready to back them in "
+                  "an interview.", ""]  # fmt: skip
+        lines += [f"- {c.requirement_id} ({_cell(reqs[c.requirement_id].text)})" for c in weak_proof]
+        lines.append("")
+    knockouts = [r for r in spec.requirements if r.kind == "knockout"]
+    if knockouts:
+        lines += ["## Knockouts", "", "Judged against your candidate facts in `knockouts.md`:", ""]
+        lines += [f"- {r.id}: “{_cell(r.quote)}”" for r in knockouts]
+        lines.append("")
+    used = Counter(bank.claim(s.claim_id).entry_id for c in covs for s in c.support)
+    if used:
+        lines += ["## Evidence used most", "", "Entries by the number of requirements they support:", ""]
+        for entry_id, n in used.most_common():
+            entry = bank.entries[entry_id]
+            reqs_for = sorted({c.requirement_id for c in covs for s in c.support
+                               if bank.claim(s.claim_id).entry_id == entry_id}, key=_req_order)  # fmt: skip
+            lines.append(f"- {_entry_label(entry)}: {n} ({', '.join(reqs_for)})")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def render_check(report: CheckReport) -> str:
+    lines = ["# Match check", ""]
+    lines.append("**OK**" if report.ok else "**Fix the errors below, then rerun `tailor plan`.**")
+    lines.append("")
+    lines += [f"- {f.severity}: [{f.check}] {f.message}" for f in report.findings] or ["- No findings."]
+    return "\n".join(lines) + "\n"

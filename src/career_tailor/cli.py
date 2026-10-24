@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import annotate, bank, ingest, jobspec, knockouts, opportunities, paths
+from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths
 from .models import Posting
 
 COMMANDS = {
@@ -98,6 +98,48 @@ def cmd_job(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_plan(args: argparse.Namespace) -> int:
+    p = paths.load()
+    folder = resolve_application(p, args.folder)
+    if folder is None:
+        print(f"error: no single application folder matches {args.folder!r} in {p.applications}", file=sys.stderr)
+        return 1
+    spec_report, spec = jobspec.check_folder(folder)
+    if not spec_report.ok or spec is None:
+        print(f"error: the job spec has errors; run `tailor job --check {folder.name}` first", file=sys.stderr)
+        return 1
+    try:
+        b = bank.load(p.bank)
+    except FileNotFoundError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    if reason := bank.stale_reason(b, p):
+        print(f"warning: {reason}", file=sys.stderr)
+    retrieval = match.retrieve(b, spec)
+    pack = match.write_pack(folder, b, spec, retrieval)
+    m, report = match.load_match(folder)
+    if m is None and not (folder / match.MATCH_FILE).is_file():
+        print(f"plan: {len(retrieval.hits)} requirements retrieved; suggested track {retrieval.tracks[0]!r}")
+        print(f"next: fill {folder / match.MATCH_FILE} from {pack.name}, then `tailor plan {folder.name}`")
+        return 0
+    if m is not None:
+        report = match.validate(m, spec, b)
+    (folder / match.CHECK_FILE).write_text(match.render_check(report), encoding="utf-8")
+    for f in report.findings:
+        print(f"{f.severity}: [{f.check}] {f.message}")
+    if not report.ok or m is None:
+        return 1
+    (folder / match.GAP_FILE).write_text(match.gap_report(spec, m, b, retrieval), encoding="utf-8")
+    verdicts = {v: sum(c.verdict == v for c in m.coverage) for v in ("strong", "partial", "none")}
+    basic = match.weighted_coverage(spec, m, "basic")
+    print(
+        f"gap report: {verdicts['strong']} supported, {verdicts['partial']} weak, {verdicts['none']} unsupported"
+        + (f"; basic coverage {basic:.0%}" if basic is not None else "")
+        + f" -> {folder / match.GAP_FILE}"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailor", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -116,11 +158,15 @@ def main(argv: list[str] | None = None) -> None:
                 "--check", metavar="FOLDER", help="validate an application's jobspec.json against its posting"
             )
             cmd.add_argument("--company", help="company name to use instead of the board's")
+        if name == "plan":
+            cmd.add_argument("folder", help="application folder (path, name, or unique name prefix)")
     args = parser.parse_args(argv)
     if args.command == "bank":
         raise SystemExit(cmd_bank(args))
     if args.command == "job":
         raise SystemExit(cmd_job(args))
+    if args.command == "plan":
+        raise SystemExit(cmd_plan(args))
     raise SystemExit(f"tailor {args.command}: not implemented yet")
 
 
