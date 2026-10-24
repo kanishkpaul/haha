@@ -131,6 +131,7 @@ class Entry(Model):
     tracks: list[str] = Field(default_factory=list)  # role-track targets this entry leads or supports
     team: bool = False
     public_links: list[str] = Field(default_factory=list)  # public artifact URLs from its proof cards
+    same_work: list[str] = Field(default_factory=list)  # entry or row-claim ids describing the same work
     claims: list[Claim] = Field(default_factory=list)
     source: SourceRef
 
@@ -153,6 +154,7 @@ class Annotation(Model):
     hide_claims: list[str] = Field(default_factory=list)
     extra_claims: list[str] = Field(default_factory=list)  # verbatim sentences from the entry's notes or fields
     claim_proof: dict[str, ProofStrength] = Field(default_factory=dict)  # downgrade where a card narrows a claim
+    same_work: list[str] = Field(default_factory=list)  # entries or row claims that must not appear alongside it
     note: str = ""
 
 

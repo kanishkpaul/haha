@@ -156,4 +156,9 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (24 Oct 2026):** M3 done. All five jobs have validated `match.json` files (every support quotes its claim verbatim) and gap reports. Basic coverage: METR 100%, Prime Intellect 100%, Apollo 89%, Cohere 76%, Anthropic 75%. Unsupported asks: LLM post-training (Anthropic, Apollo) and distributed LLM training (Cohere, two asks). Retrieval's track suggestion was overridden on three of five jobs, so M4 reads the confirmed track from `match.json`.
 
-M4–M8 phases are added here when each milestone starts.
+| **P4.1** | Page model in `selection.py`: Letter or A4 from the job's location, line costs per bullet, entry, section and fixed block; same-work exclusions from shared proof cards (award lines excepted), overlay `same_work` links, and one result stated twice | layout and exclusion tests on the fixture |
+| **P4.2** | CP-SAT model: a boolean per entry and claim; page budget; required education and ≥1 experience entry; bullet limits per entry; 2–4 projects and ≤3 award lines on one page; exclusions; objective = weighted requirement coverage (basic 3×, responsibility 2×, preferred 1×) plus proof, metrics, recency and track fit | solver tests: budget held, exclusions held, coverage preferred |
+| **P4.3** | `selection.json` and `plan.md` (picks with the requirements each covers, line use, what was left out and why); pins and bans from `plan.edits.yaml`; `tailor plan` solves once `match.json` is valid | CLI test with pins and bans |
+| **P4.4** | The five real jobs through selection | five plans within budget with no exclusion broken |
+
+M5–M8 phases are added here when each milestone starts.

@@ -50,7 +50,7 @@ def test_annotations_override_and_survive_rebuild(data_dir):
     write_annotation(p.annotations, {
         "entry_id": "ENG-02", "name": "Teamfold (team project)", "team": True,
         "team_note": "Co-led with Bob Sample; Ada owned perception.", "skills": ["Python", "OCR"],
-        "claim_skills": {"ENG-02.b1": ["leadership"]}, "hide_claims": ["ENG-02.b2"],
+        "claim_skills": {"ENG-02.b1": ["leadership"]}, "hide_claims": ["ENG-02.b2"], "same_work": ["AWD-02"],
     })  # fmt: skip
     write_annotation(p.annotations, {"entry_id": "LEAD-02", "dates_display": "Mar 2029 – Dec 2029"})
     for _ in range(2):  # rebuilding re-applies the overlay
@@ -61,6 +61,7 @@ def test_annotations_override_and_survive_rebuild(data_dir):
     assert e.notes["Team credit"].startswith("Co-led")
     assert e.claims[0].skills == ["leadership"]
     assert not e.claims[1].show_on_resume
+    assert e.same_work == ["AWD-02"]
     assert bank.load(p.bank).entries["LEAD-02"].dates.display == "Mar 2029 – Dec 2029"
     assert not [n for n in built.notes["problems"] if n.startswith("annotation")]
 
@@ -68,8 +69,9 @@ def test_annotations_override_and_survive_rebuild(data_dir):
 def test_annotation_problems_are_reported(data_dir):
     p = paths.load()
     write_annotation(p.annotations, {"entry_id": "ENG-77"})
-    write_annotation(p.annotations, {"entry_id": "ENG-01", "hide_claims": ["ENG-01.b9"]})
+    write_annotation(p.annotations, {"entry_id": "ENG-01", "hide_claims": ["ENG-01.b9"], "same_work": ["ENG-03.r9"]})
     problems = bank.compile_bank(p).notes["problems"]
+    assert "annotation ENG-01: same_work names unknown ENG-03.r9" in problems
     assert "annotation for unknown entry ENG-77" in problems
     assert "annotation ENG-01: unknown claim ENG-01.b9" in problems
 

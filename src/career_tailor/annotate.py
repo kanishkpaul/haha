@@ -131,6 +131,12 @@ def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> li
                 claims[cid].show_on_resume = False
             else:
                 problems.append(f"annotation {a.entry_id}: unknown claim {cid}")
+        for ref in a.same_work:
+            target = by_id.get(ref.split(".")[0])
+            if target is None or ("." in ref and ref not in {c.id for c in target.claims}):
+                problems.append(f"annotation {a.entry_id}: same_work names unknown {ref}")
+            elif ref not in entry.same_work:
+                entry.same_work.append(ref)
     return problems
 
 
