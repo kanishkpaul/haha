@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection, write
-from .models import Posting, Selection, Writing
+from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection, verify, write
+from .models import Posting, Review, Selection, Writing
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -202,6 +202,55 @@ def cmd_write(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    p = paths.load()
+    folder = resolve_application(p, args.folder)
+    if folder is None:
+        print(f"error: no single application folder matches {args.folder!r} in {p.applications}", file=sys.stderr)
+        return 1
+    spec_report, spec = jobspec.check_folder(folder)
+    m, _ = match.load_match(folder)
+    sel_path, draft_path = folder / selection.SELECTION_FILE, folder / write.WRITING_FILE
+    if not spec_report.ok or spec is None or m is None or not sel_path.is_file() or not draft_path.is_file():
+        print(f"error: no draft yet; run `tailor write {folder.name}` first", file=sys.stderr)
+        return 1
+    b = bank.load(p.bank)
+    if reason := bank.stale_reason(b, p):
+        print(f"warning: {reason}", file=sys.stderr)
+    sel = Selection.model_validate_json(sel_path.read_text(encoding="utf-8"))
+    try:
+        w = Writing.model_validate_json(draft_path.read_text(encoding="utf-8"))
+    except ValidationError as err:
+        print(f"error: {write.WRITING_FILE}: {str(err)[:500]}", file=sys.stderr)
+        return 1
+    checks = write.guard(w, b, spec, m, sel).findings + verify.facts(w, b, sel) + verify.lint(w, b, spec, sel)
+    pack = verify.write_pack(folder, b, spec, sel, w)
+    review, review_findings = None, []
+    review_path = folder / verify.REVIEW_FILE
+    if review_path.is_file():
+        try:
+            review = Review.model_validate_json(review_path.read_text(encoding="utf-8"))
+        except ValidationError as err:
+            print(f"error: {verify.REVIEW_FILE}: {str(err)[:500]}", file=sys.stderr)
+            return 1
+        if review_path.stat().st_mtime < draft_path.stat().st_mtime:
+            print("warning: the draft changed after the review; review it again", file=sys.stderr)
+        review_findings = verify.check_review(review, w, spec, sel, verify.page_text(b, spec, sel, w))
+    report = folder / verify.REPORT_FILE
+    report.write_text(verify.render_report(spec, w, checks, review, review_findings), encoding="utf-8")
+    findings = checks + review_findings
+    for f in findings:
+        print(f"{f.severity}: [{f.check}] {f.message}")
+    errors = sum(f.severity == "error" for f in findings)
+    if review is None:
+        print(f"check: {errors} errors so far")
+        print(f"next: fill {review_path} from {pack.name}, then `tailor check {folder.name}`")
+        return 1 if errors else 0
+    letter = verify.grade(spec, review)[0]
+    print(f"check: {errors} errors, {len(findings) - errors} warnings, screener grade {letter} -> {report}")
+    return 1 if errors else 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailor", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -220,7 +269,7 @@ def main(argv: list[str] | None = None) -> None:
                 "--check", metavar="FOLDER", help="validate an application's jobspec.json against its posting"
             )
             cmd.add_argument("--company", help="company name to use instead of the board's")
-        if name in ("plan", "write"):
+        if name in ("plan", "write", "check"):
             cmd.add_argument("folder", help="application folder (path, name, or unique name prefix)")
     args = parser.parse_args(argv)
     if args.command == "bank":
@@ -231,6 +280,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(cmd_plan(args))
     if args.command == "write":
         raise SystemExit(cmd_write(args))
+    if args.command == "check":
+        raise SystemExit(cmd_check(args))
     raise SystemExit(f"tailor {args.command}: not implemented yet")
 
 

@@ -6,7 +6,7 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-stages%200--4%20work-yellow)
+![status](https://img.shields.io/badge/status-stages%200--5%20work-yellow)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
@@ -68,7 +68,7 @@ flowchart LR
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
 | 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
 
-> **Status:** stages 0–4 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page, and `uv run tailor write <folder>` turns the plan into guarded bullets. Stages 5–7 are still docstrings and dreams, and politely say so.
+> **Status:** stages 0–5 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page, `uv run tailor write <folder>` turns the plan into guarded bullets, and `uv run tailor check <folder>` fact-checks them and simulates the screener. Stages 6–7 are still docstrings and dreams, and politely say so.
 
 ## 🚀 Running it
 
@@ -122,7 +122,15 @@ uv run tailor write anthropic-research-engineer
 
 The first run writes `write.prompt.md`: every planned claim with its conditions, team credit, the requirements it supports and a character budget, plus voice samples from earlier resumes. Claude fills `draft.json`; the second run guards it (every claim cited once, budgets held, no number, ownership word or banned phrase the claims don't support, skills only from the skills bank) and writes `draft.md`.
 
-**7. Make sure the plumbing is plumbed:**
+**7. Check it:**
+
+```bash
+uv run tailor check anthropic-research-engineer
+```
+
+Fact-checks every bullet against its cited claims (numbers, names, tools, dates, metric conditions), lints policy and style, then asks Claude for an entailment review and a strict screener's reading of the page (`review.json`). `check_report.md` has the findings and an estimated A–D screener grade.
+
+**8. Make sure the plumbing is plumbed:**
 
 ```bash
 uv run pytest

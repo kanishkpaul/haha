@@ -331,3 +331,46 @@ def check_review(review: Review, w: Writing, spec: JobSpec, sel: Selection, text
             add("screener", "warning", f"{v.requirement_id} has partial support on the page, but reads as "
                                        "does not meet")  # fmt: skip
     return findings
+
+
+# ---------------------------------------------------------------- report
+
+
+def render_report(spec: JobSpec, w: Writing, checks: list[Finding], review: Review | None,
+                  review_findings: list[Finding]) -> str:  # fmt: skip
+    findings = checks + review_findings
+    ok = not any(f.severity == "error" for f in findings)
+    lines = [f"# Check report: {spec.title} at {spec.company}", ""]
+    if review is None:
+        lines += [
+            "**Waiting for the review.** Fill `review.json` from `verify.prompt.md`, then run `tailor check`.",
+            "",
+        ]
+    else:
+        lines += ["**Ready for rendering.**" if ok else "**Fix the errors below, then rerun `tailor check`.**", ""]
+        letter, basic, preferred = grade(spec, review)
+        shares = [f"basic {basic:.0%} Meets" if basic is not None else "",
+                  f"preferred {preferred:.0%}" if preferred is not None else ""]  # fmt: skip
+        lines += [f"Estimated screener grade: **{letter}** ({', '.join(x for x in shares if x)}).", ""]
+
+    def section(title: str, items: list[Finding]) -> None:
+        lines.extend([f"## {title}", ""])
+        for f in items:
+            lines.append(f"- {f.severity}: [{f.check}] {f.message}" + (f" — “{f.bullet}”" if f.bullet else ""))
+        if not items:
+            lines.append("- No findings.")
+        lines.append("")
+
+    section("Facts, policy and style", checks)
+    if review is not None:
+        entailed = sum(r.entailed for r in review.bullets)
+        lines += [f"{entailed} of {len(w.bullets)} bullets follow from their claims.", ""]
+        section("Review", review_findings)
+        reqs = {r.id: r for r in spec.requirements}
+        lines += ["## Screener", "", "| Req | Kind | Verdict | Line on the page |", "|---|---|---|---|"]
+        for v in review.screener:
+            r = reqs.get(v.requirement_id)
+            kind = r.kind if r else "?"
+            lines.append(f"| {v.requirement_id} | {kind} | {v.verdict} | {v.quote.replace('|', '/')} |")
+        lines.append("")
+    return "\n".join(lines)

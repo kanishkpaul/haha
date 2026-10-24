@@ -1,11 +1,12 @@
 import pytest
 
-from career_tailor import bank, paths, selection, verify, write
+from career_tailor import bank, cli, ingest, jobspec, match, paths, selection, verify, write
 from career_tailor.models import (
     BulletReview,
     Coverage,
     JobSpec,
     Match,
+    Posting,
     Requirement,
     Review,
     ScreenerVerdict,
@@ -239,3 +240,40 @@ def test_screener_quotes_are_verbatim_and_supported_asks_loop_back(mini_bank, se
         "R1 is supported on the page but reads as unknown: rewrite its bullet in the posting's words (tailor write)"
     ]
     assert verify.grade(SPEC, review)[0] == "D"
+
+
+POSTING = Posting(key=SPEC.key, ats="lever", org="acme", company="Acme", title=SPEC.title,
+                  url="https://jobs.lever.co/acme/1", fetched_at="2030-01-01T00:00:00+00:00",
+                  text="- build reproducible evaluations\n- experience building browser agents\n")  # fmt: skip
+
+
+def test_cli_check_reports_then_grades(data_dir, capsys, draft, sel):
+    p = paths.load()
+    bank.save(bank.compile_bank(p), p.bank)
+    folder = ingest.save_posting(p.applications, POSTING, {})
+    (folder / jobspec.SPEC_FILE).write_text(SPEC.model_dump_json())
+    with pytest.raises(SystemExit) as done:
+        cli.main(["check", folder.name])
+    assert done.value.code == 1 and "run `tailor write" in capsys.readouterr().err
+    (folder / match.MATCH_FILE).write_text(MATCH.model_dump_json())
+    (folder / selection.SELECTION_FILE).write_text(sel.model_dump_json())
+    (folder / write.WRITING_FILE).write_text(draft.model_dump_json())
+    with pytest.raises(SystemExit) as done:
+        cli.main(["check", folder.name])
+    out = capsys.readouterr().out
+    assert done.value.code == 1  # the fixture's record wording drops a condition
+    assert "error: [conditions] ENG-01.b2: keeps 20/20 per named gate" in out and "next: fill" in out
+    report = (folder / verify.REPORT_FILE).read_text()
+    assert (
+        report.startswith("# Check report: ML Engineer, Evaluation at Acme") and "**Waiting for the review.**" in report
+    )
+    assert (folder / verify.PACK_FILE).is_file()
+
+    (folder / verify.REVIEW_FILE).write_text(honest_review(draft, sel).model_dump_json())
+    with pytest.raises(SystemExit):
+        cli.main(["check", folder.name])
+    assert "screener grade A" in capsys.readouterr().out
+    report = (folder / verify.REPORT_FILE).read_text()
+    assert "Estimated screener grade: **A** (basic 100% Meets, preferred 0%)." in report
+    assert "| R1 | basic | meets | Built a reproducible evaluation |" in report
+    assert f"{len(draft.bullets)} of {len(draft.bullets)} bullets follow from their claims." in report
