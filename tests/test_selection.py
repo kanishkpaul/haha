@@ -97,7 +97,7 @@ MATCH = coverage(R1=[("EXP-01.b1", "strong")], R2=[("ENG-01.b1", "partial")])
 @pytest.fixture
 def tight(monkeypatch):
     """A page with room for only a few items, so the solver has to choose."""
-    layouts = {k: selection.Layout(paper=k, lines_per_page=28, chars_per_line=100) for k in ("letter", "a4")}
+    layouts = {k: selection.Layout(paper=k, lines_per_page=32, chars_per_line=100) for k in ("letter", "a4")}
     monkeypatch.setattr(selection, "LAYOUTS", layouts)
 
 
@@ -118,7 +118,7 @@ def test_tight_page_keeps_what_the_job_asks_for(mini_bank, tight):
     sel = selection.solve(mini_bank, SPEC, MATCH)
     picked = {c for p in sel.picks for c in p.claim_ids}
     assert {"EXP-01.b1", "ENG-01.b1"} <= picked
-    assert sel.lines_used <= 28
+    assert sel.lines_used <= 32
     everything = {c.id for e in mini_bank.entries.values() if e.kind != "education" for c in e.claims}
     assert len(picked) < len(everything) / 2  # the page really is tight
 

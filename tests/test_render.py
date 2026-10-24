@@ -87,6 +87,8 @@ def test_pdf_text_reads_in_order_and_joins_hyphenated_breaks():
     lay = layout((0, 700, 690, 36, "• Kept 98.9% of deferential vs less-"), (0, 685, 675, 46, "deferential ones."),
                  (0, 720, 710, 400, "Aug 2026"), (0, 720, 710, 36, "Jadavpur University"))  # fmt: skip
     assert lay.text() == "Jadavpur University Aug 2026 Kept 98.9% of deferential vs less-deferential ones."
+    slash = layout((0, 700, 690, 36, "PyTorch/"), (0, 685, 675, 46, "Hugging Face models"))
+    assert slash.text() == "PyTorch/Hugging Face models"
 
 
 def test_fill_measures_the_last_page():

@@ -161,6 +161,7 @@ def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
 KIND_FACTOR = {"basic": 3, "responsibility": 2, "preferred": 1}
 PROOF_VALUE = {"collected": 12, "accepted": 8, "account": 3, "none": 3}
 KIND_VALUE = {"experience": 60}  # screeners read research and industry experience first (record section 12)
+CATALOG_VALUE = -60  # catalog entries collect small or early projects; a named project says more
 # An award line earns its place with a placement or a selection, not an interview or an invitation.
 _PLACED = re.compile(
     r"\b(?:top[- ]|\d+(?:st|nd|rd|th)\b|winner|won\b|runner-up|selected|first place|accepted into)", re.I
@@ -172,6 +173,7 @@ SCALE = 10  # line costs in tenths of a line
 class Rules:
     """Section limits for a page count, following the record's assembly guidance (section 12)."""
 
+    experience: int  # at least this many experience entries, when the record has them
     projects: tuple[int, int]  # research + engineering entries
     awards: tuple[int, int]  # one-line award and selection entries
     leadership: int
@@ -181,9 +183,10 @@ class Rules:
     def for_pages(cls, pages: int) -> "Rules":
         if pages == 1:
             bullets = {"experience": 4, "research": 3, "engineering": 3, "leadership": 2, "catalog": 2}
-            return cls(projects=(2, 4), awards=(2, 3), leadership=1, bullets=bullets)
+            return cls(experience=2, projects=(2, 4), awards=(2, 3), leadership=1, bullets=bullets)
         bullets = {"experience": 5, "research": 4, "engineering": 4, "leadership": 3, "catalog": 3}
-        return cls(projects=(2, 4 + 3 * (pages - 1)), awards=(2, 3 + 3 * (pages - 1)), leadership=2, bullets=bullets)
+        return cls(experience=2, projects=(2, 4 + 3 * (pages - 1)), awards=(2, 3 + 3 * (pages - 1)), leadership=2,
+                   bullets=bullets)  # fmt: skip
 
 
 class SelectionError(ValueError):
@@ -272,14 +275,19 @@ def solve(
     def count(kinds: set[str]) -> cp_model.LinearExpr:
         return sum(x[eid] for eid, e in entries.items() if e.kind in kinds)
 
-    if any(e.kind == "experience" for e in entries.values()):
-        model.add(count({"experience"}) >= 1)
+    def open_(eid: str) -> bool:
+        """The entry can still be picked: not banned, and some claim of it is allowed."""
+        allowed = [c for c in by_entry[eid] if c not in edits.ban and (only is None or c in only)]
+        return eid not in edits.ban and bool(allowed)
+
+    available_experience = sum(1 for eid, e in entries.items() if e.kind == "experience" and open_(eid))
+    model.add(count({"experience"}) >= min(rules.experience, available_experience))
     model.add(count({"research", "engineering"}) >= rules.projects[0])
     model.add(count({"research", "engineering"}) <= rules.projects[1])
     award_lines = count(ONE_LINE_KINDS)
     model.add(award_lines <= rules.awards[1])
-    if sum(1 for e in entries.values() if e.kind in ONE_LINE_KINDS) >= rules.awards[0]:
-        model.add(award_lines >= rules.awards[0])
+    available_awards = sum(1 for eid, e in entries.items() if e.kind in ONE_LINE_KINDS and open_(eid))
+    model.add(award_lines >= min(rules.awards[0], available_awards))
     model.add(count({"leadership"}) <= rules.leadership)
     for a, b, _ in exclusions(bank):
         for ca in a:
@@ -294,8 +302,11 @@ def solve(
         for cid in claims.keys() - only:
             model.add(y[cid] == 0)
 
+    # Two stages. First what the page covers: requirements (weighted), experience shown, award lines that
+    # are placements, named projects over catalog rows. Then, holding that, how good the evidence is: proof,
+    # numbers, recency, fit to the job's track. Track fit and proof only choose among equally covering pages.
     reqs = {r.id: r for r in spec.requirements}
-    value = []
+    page, evidence = [], []
     for cov in m.coverage:
         supports = [s for s in cov.support if s.claim_id in y]
         if not supports or cov.requirement_id not in reqs:
@@ -307,12 +318,13 @@ def solve(
         model.add(hit <= n)
         extra = model.new_int_var(0, 2, f"extra_{r.id}")
         model.add(extra <= n - hit)
-        value += [50 * w * hit, 10 * w * extra]
+        page += [50 * w * hit, 10 * w * extra]
         strong = [y[s.claim_id] for s in supports if s.strength == "strong"]
         if strong:
             top = model.new_bool_var(f"strong_{r.id}")
             model.add(top <= sum(strong))
-            value.append(50 * w * top)
+            # A screener grades on basic requirements marked Meets; partial support there reads as Unknown.
+            page.append(50 * w * (2 if r.kind == "basic" else 1) * top)
     track = next((t for t in bank.tables.tracks if t.target == m.track), None)
     lead = set(track.lead_entries) if track else set()
     support = set(track.support_entries) if track else set()
@@ -321,21 +333,28 @@ def solve(
         quality += 15 if cid in lead else 8 if cid in support else 0
         if ".n" in cid:  # promoted from the entry's notes: supporting detail, not a headline bullet
             quality -= 8
-        if entries[c.entry_id].kind in ONE_LINE_KINDS:
-            quality += 15 if _PLACED.search(md_plain(c.text)) else 0
-        value.append(quality * y[cid])
+        evidence.append(quality * y[cid])
+        if entries[c.entry_id].kind in ONE_LINE_KINDS and _PLACED.search(md_plain(c.text)):
+            page.append(15 * y[cid])
     for eid, entry in entries.items():
+        kind_value = CATALOG_VALUE if is_catalog(entry) else KIND_VALUE.get(entry.kind, 0)
+        page.append(kind_value * x[eid])
         fit = 25 if eid in lead else 12 if eid in support else 0
         recency = _recency(entry) // (2 if entry.kind in ONE_LINE_KINDS else 1)
-        value.append((fit + recency + KIND_VALUE.get(entry.kind, 0)) * x[eid])
-    model.maximize(sum(value))
+        evidence.append((fit + recency) * x[eid])
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.num_workers = 1  # deterministic: the same inputs give the same plan
+    model.maximize(sum(page))
     status = solver.solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise SelectionError("no plan fits: check pins in plan.edits.yaml against the page budget and exclusions")
+    model.add(sum(page) >= round(solver.objective_value))
+    model.maximize(sum(evidence))
+    status = solver.solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise SelectionError("no plan fits on the second pass")
 
     picked = {cid for cid in claims if solver.value(y[cid])}
     return _selection(bank, spec, m, edits, pages, layout, budget, picked, solver.value(sum(cost)) / SCALE)

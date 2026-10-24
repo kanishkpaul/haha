@@ -284,12 +284,13 @@ class PdfLayout:
     lines: list[Line]
 
     def text(self) -> str:
-        """Text in reading order: pages, then top to bottom, then left to right. A line ending in a hyphen
-        joins the next without a space, so "less-" + "deferential" reads "less-deferential"."""
+        """Text in reading order: pages, then top to bottom, then left to right. Typst breaks lines after a
+        hyphen or slash, so a line ending in one joins the next without a space ("less-" + "deferential",
+        "PyTorch/" + "Hugging Face")."""
         out = ""
         for line in sorted(self.lines, key=lambda x: (x.page, -round(x.top), x.left)):
             piece = line.text.removeprefix("•").strip()
-            out += piece if out.endswith("-") else (" " + piece if out else piece)
+            out += piece if out.endswith(("-", "/")) else (" " + piece if out else piece)
         return out
 
     def fill(self, margin_in: float) -> float:
