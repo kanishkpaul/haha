@@ -1,7 +1,7 @@
 import pytest
 
 from career_tailor import bank, paths, selection, verify, write
-from career_tailor.models import Coverage, JobSpec, Match, Requirement, Support
+from career_tailor.models import Coverage, JobSpec, Match, Requirement, Support, TailoredBullet
 
 R1 = Requirement(
     id="R1", text="Reproducible evaluation", quote="build reproducible evaluations", kind="basic", weight=3
@@ -91,3 +91,79 @@ def test_a_kept_metric_keeps_its_condition(mini_bank, sel, draft):
 
 def own(findings):
     return [m for m in messages(findings, "conditions") if m.startswith("EXP-01.b2")]
+
+
+# ---------------------------------------------------------------- lint
+
+
+def test_clean_draft_has_no_lint(mini_bank, sel, draft):
+    assert [f for f in verify.lint(draft, mini_bank, SPEC, sel) if f.severity == "error"] == []
+
+
+def test_links_belong_in_headings_and_must_be_public(mini_bank, sel, draft):
+    w = edited(draft, "EXP-01.b1", "Built a reproducible evaluation (github.com/ada-example/probe).")
+    assert messages(verify.lint(w, mini_bank, SPEC, sel), "links") == [
+        "EXP-01.b1: links go in entry headings, not bullets"
+    ]
+    entry = mini_bank.entries["ENG-01"]
+    entry.public_links = ["https://github.com/ada-example/sketch"]  # private in the repository inventory
+    assert "ENG-01 links github.com/ada-example/sketch, a private repository" in messages(
+        verify.lint(draft, mini_bank, SPEC, sel), "links"
+    )
+
+
+def test_team_results_say_so(mini_bank, sel, draft):
+    award = next(p for p in sel.picks if p.section == "Awards and selections")
+    mini_bank.entries[award.entry_id].team = True
+    line = next(b for b in draft.bullets if b.entry_id == award.entry_id)
+    line.text = "Top-100 finish, Example ML Challenge 2030."
+    assert messages(verify.lint(draft, mini_bank, SPEC, sel), "team") == [
+        f"{line.claim_ids[0]}: a team result must say it is a team's"
+    ]
+    line.text = "Top-100 team finish, Example ML Challenge 2030."
+    mini_bank.entries["ENG-01"].team = True
+    assert messages(verify.lint(draft, mini_bank, SPEC, sel), "team") == [
+        "ENG-01 is team work, but no bullet or the role says so"
+    ]
+
+
+def test_policy_rules(mini_bank, sel, draft):
+    w = edited(draft, "EXP-01.b1", "Solved 13 games with Arnesh and my team.")
+    mini_bank.claim("EXP-01.b2").status = "superseded"
+    found = verify.lint(w, mini_bank, SPEC, sel)
+    assert messages(found, "policy") == [
+        "EXP-01.b2: cites EXP-01.b2, which is superseded or hidden",
+        "EXP-01.b1: report scores and levels, not 'solved N games'",
+        "EXP-01.b1: name Arnesh Banerjee or Arnesh Gade in full; they are different people",
+    ]
+    assert messages(found, "style") == ["EXP-01.b1: no first person"]
+
+
+def test_style_rules(mini_bank, sel, draft):
+    w = edited(draft, "EXP-01.b1", "built it on 10/22/2030,  with a hidden​mark and the model's own scorer.")
+    w = edited(w, "EXP-01.b2", "Kept the model’s tone markers.")
+    found = messages(verify.lint(w, mini_bank, SPEC, sel), "style")
+    assert "EXP-01.b1: contains hidden or control characters" in found
+    assert "EXP-01.b1: write dates as words (Oct 2026), not numbers" in found
+    assert "EXP-01.b1: double space" in found and "EXP-01.b1: start with a capital letter" in found
+    assert "straight and curly apostrophes are mixed; use one kind" in found
+
+
+def test_acronyms_in_both_forms(mini_bank, sel, draft):
+    w = edited(draft, "EXP-01.b1", "Built a reproducible evaluation of LLMs over 10,000 utterances.")
+    assert messages(verify.lint(w, mini_bank, SPEC, sel), "keywords") == [
+        "the posting's term appears in one form only; add “large language models” once for screeners that "
+        "search the other"
+    ]
+    w.skills = {"Models": ["large language models"]}
+    assert messages(verify.lint(w, mini_bank, SPEC, sel), "keywords") == []
+
+
+def test_numbers_from_two_claims_in_one_line(mini_bank, sel, draft):
+    w = draft.model_copy(deep=True)
+    w.bullets = [b for b in w.bullets if b.claim_ids not in (["EXP-01.b1"], ["EXP-01.b2"])]
+    w.bullets.append(TailoredBullet(entry_id="EXP-01", claim_ids=["EXP-01.b1", "EXP-01.b2"],
+                                    text="Evaluated 10,000 utterances; Model A kept 97.5% versus 4.0%."))  # fmt: skip
+    assert messages(verify.lint(w, mini_bank, SPEC, sel), "protocol") == [
+        "EXP-01.b1+EXP-01.b2: results from EXP-01.b1, EXP-01.b2 in one line; check they come from the same protocol"
+    ]
