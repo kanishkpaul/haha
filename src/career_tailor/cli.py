@@ -23,7 +23,7 @@ def cmd_bank(args: argparse.Namespace) -> int:
         b = bank.load(p.bank)
         tracks = [t.target for t in b.tables.tracks]
         packs = annotate.write_packs(list(b.entries.values()), b.tables.skills, tracks, p.annotations,
-                                     p.work / "annotate")  # fmt: skip
+                                     p.work / "annotate", b.proof)  # fmt: skip
         print(f"annotate: {len(packs)} prompt packs -> {p.work / 'annotate'}; write overlays to {p.annotations}")
         return 0
     if args.report:

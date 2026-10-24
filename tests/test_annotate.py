@@ -93,6 +93,7 @@ def test_cli_writes_annotation_packs(data_dir, capsys):
     assert "# Annotate ENG-01" in text and str(data_dir / "annotations" / "ENG-01.yaml") in text
     assert "Arnesh Banerjee and Arnesh Gade are different people" in text
     assert '"hide_claims"' in text and "ML evaluation" in text
+    assert "No proof card maps to this entry." in text  # no evidence folder in this test
 
 
 def test_extra_claims_must_be_verbatim_from_notes(data_dir):
@@ -121,3 +122,22 @@ def test_promoted_claims_get_metrics_and_conditions(data_dir):
     assert any("12-language collection" in c for c in promoted.conditions)
     assert promoted.skills == ["corpus building"]
     assert not [n for n in built.notes["problems"] if n.startswith("annotation")]
+
+
+def test_packs_show_proof_cards(data_dir, mini_record):
+    from test_bank import proof_cards
+
+    p = paths.load()
+    lines = mini_record.read_text().split("\n")
+    eng1 = lines.index("### ENG-01 · Clawbot — Local Browser Agent") + 1
+    proof_cards(p.proof_entries, bank.sha256(mini_record), [
+        ("CAREER-002", eng1, eng1 + 12, "partial", {"artifact_ids": ["REPO-claw"], "contribution": "Built it alone.",
+                                                  "evidence_summary": "Repo history shows sole authorship."}),
+    ], [{"id": "REPO-claw", "title": "clawbot", "url": "https://github.com/ada-example/clawbot", "access": "public repository"}])  # fmt: skip
+    built = bank.compile_bank(p)
+    bank.save(built, p.bank)
+    with pytest.raises(SystemExit):
+        cli.main(["bank", "--annotate"])
+    text = (data_dir / "work" / "annotate" / "ENG-01.md").read_text()
+    assert "### CAREER-002 · " in text and "(collected; claims ENG-01.b1, ENG-01.b2)" in text
+    assert "- Contribution: Built it alone." in text and "https://github.com/ada-example/clawbot" in text

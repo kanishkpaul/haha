@@ -7,11 +7,13 @@ import pytest
 from career_tailor import bank, cli, paths
 
 
-def proof_cards(path, record_sha, refs):
+def proof_cards(path, record_sha, refs, artifacts=()):
+    """Write entries.json (and artifacts.json) for cards given as (id, start, end, coverage[, extra fields])."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    cards = [{"id": cid, "artifact_coverage": cov, "master_refs": [{"line_start": a, "line_end": b}]}
-             for cid, a, b, cov in refs]  # fmt: skip
+    cards = [{"id": r[0], "artifact_coverage": r[3], "master_refs": [{"line_start": r[1], "line_end": r[2]}],
+              **(r[4] if len(r) > 4 else {})} for r in refs]  # fmt: skip
     path.write_text(json.dumps({"metadata": {"master_sha256": record_sha}, "entries": cards}))
+    (path.parent / "artifacts.json").write_text(json.dumps({"artifacts": list(artifacts)}))
 
 
 def test_build_save_load_round_trip(data_dir):
@@ -38,13 +40,51 @@ def test_rebuild_removes_stale_entry_files(data_dir):
 def test_proof_cards_link_by_line_range(data_dir, mini_record):
     p = paths.load()
     lines = mini_record.read_text().split("\n")
-    start = lines.index("### EXP-01 · Example University — Research Collaborator, Speech") + 1
-    proof_cards(p.proof_entries, bank.sha256(mini_record), [("CAREER-001", start, start + 12, "personal account only")])
+    exp1 = lines.index("### EXP-01 · Example University — Research Collaborator, Speech") + 1
+    eng1 = lines.index("### ENG-01 · Clawbot — Local Browser Agent") + 1
+    lead1 = lines.index("### LEAD-01 · OpenThing — Co-Founder & CEO") + 1
+    artifacts = [
+        {"id": "REPO-claw", "title": "clawbot", "url": "https://github.com/ada-example/clawbot", "access": "public repository"},
+        {"id": "MAIL-claw", "title": "thread", "url": "https://mail.example/1", "access": "private correspondence"},
+    ]  # fmt: skip
+    proof_cards(p.proof_entries, bank.sha256(mini_record), [
+        ("CAREER-001", exp1, exp1 + 12, "personal account only"),
+        ("CAREER-002", eng1, eng1 + 12, "partial", {"artifact_ids": ["REPO-claw", "MAIL-claw"],
+                                                  "contribution": "Built it alone.", "verification_status": "claim audit incomplete"}),
+        ("CAREER-003", lead1, lead1 + 6, "personal account only",
+         {"collection_status": "done (user accepted)", "recovery_resolution": {"status": "done", "basis": "Co-founders can confirm."}}),
+    ], artifacts)  # fmt: skip
     built = bank.compile_bank(p)
     assert built.claim("EXP-01.b1").evidence_ids == ["CAREER-001"]
-    assert built.claim("ENG-01.b1").evidence_ids == []
+    assert (built.claim("EXP-01.b1").proof, built.claim("ENG-01.b1").proof) == ("account", "collected")
+    assert built.claim("LEAD-01.b1").proof == "accepted" and built.claim("RES-01.l1").proof == "none"
+    assert built.entries["ENG-01"].public_links == ["https://github.com/ada-example/clawbot"]  # private mail left out
+    assert built.claim("ENG-01.b1").public_links == ["https://github.com/ada-example/clawbot"]
+    assert built.claim("EXP-01.b1").public_links == []
+    assert built.proof["CAREER-002"].contribution == "Built it alone."
     assert built.manifest.proof_linked
-    assert any("2 claims map to proof cards; 2 of them map only" in n for n in built.notes["info"])
+    summary = next(n for n in built.notes["info"] if n.startswith("Proof backing"))
+    assert "2 collected sources, 1 user-accepted closures, 2 personal account only" in summary
+    assert "Independent claim audit: not yet done" in summary
+    bank.save(built, p.bank)
+    loaded = bank.load(p.bank)
+    assert loaded.proof == built.proof and loaded.entries == built.entries
+    row = next(ln for ln in bank.report(loaded).splitlines() if ln.startswith("| ENG-01 |"))
+    assert row.split(" | ")[-2] == "collected"
+
+
+@pytest.mark.parametrize(
+    ("spans", "a", "b", "expected"),
+    [
+        ([(10, 30)], 12, 12, True),  # whole card, nothing narrower: covers every line
+        ([(10, 30), (20, 20)], 20, 20, True),  # the row it is about
+        ([(10, 30), (20, 20)], 12, 12, False),  # another row in the same catalog card
+        ([(10, 30), (40, 40)], 12, 12, True),  # a narrower citation elsewhere doesn't matter
+        ([(50, 60)], 12, 12, False),
+    ],
+)
+def test_covers_prefers_the_cards_own_row(spans, a, b, expected):
+    assert bank.covers(spans, a, b) is expected
 
 
 def test_proof_cards_for_another_record_version_are_skipped(data_dir):

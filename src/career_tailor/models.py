@@ -51,6 +51,46 @@ class Repo(Model):
     summary: str = ""
 
 
+ProofStrength = Literal["collected", "accepted", "account", "none"]  # best first
+
+
+class ProofArtifact(Model):
+    id: str
+    title: str = ""
+    type: str = ""
+    url: str = ""
+    access: str = ""  # as the registry words it, e.g. "public source", "private correspondence; review …"
+    support: str = ""
+    limits: str = ""
+
+    @property
+    def public(self) -> bool:
+        return self.access.lower().startswith("public") and bool(self.url)
+
+
+class ProofCard(Model):
+    """A proof card from the evidence folder: what backs one career entry, and how strongly."""
+
+    id: str  # CAREER-043
+    title: str
+    coverage: str = ""  # "partial" (collected sources) or "personal account only"
+    collection_status: str = ""
+    verification_status: str = ""  # independent claim audit, separate from source collection
+    contribution: str = ""
+    evidence_summary: str = ""
+    primary_artifact: str = ""
+    artifacts: list[ProofArtifact] = Field(default_factory=list)
+    accepted_basis: str = ""  # the user's accepted closure, when no original was collected
+
+    @property
+    def strength(self) -> ProofStrength:
+        if any(a.id != "ACCOUNT-MASTER" for a in self.artifacts) and self.coverage != "personal account only":
+            return "collected"
+        if self.accepted_basis:
+            return "accepted"
+        return "account"
+
+
 ClaimKind = Literal["bullet", "lead", "row", "fact", "update"]
 EntryKind = Literal["experience", "research", "engineering", "leadership", "award", "selection", "education"]
 
@@ -72,6 +112,8 @@ class Claim(Model):
     source: SourceRef | None = None  # None for record updates
     origin: str = ""  # record update source, when not from the record
     evidence_ids: list[str] = Field(default_factory=list)  # proof-card ids, e.g. CAREER-042
+    proof: ProofStrength = "none"  # strongest backing among its proof cards
+    public_links: list[str] = Field(default_factory=list)  # public artifact URLs from its own proof cards
 
 
 class Entry(Model):
@@ -88,6 +130,7 @@ class Entry(Model):
     skills: list[str] = Field(default_factory=list)
     tracks: list[str] = Field(default_factory=list)  # role-track targets this entry leads or supports
     team: bool = False
+    public_links: list[str] = Field(default_factory=list)  # public artifact URLs from its proof cards
     claims: list[Claim] = Field(default_factory=list)
     source: SourceRef
 

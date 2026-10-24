@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from .models import Annotation, Claim, DateRange, Entry, SkillArea
+from .models import Annotation, Claim, DateRange, Entry, ProofCard, SkillArea
 from .textutil import md_plain
 
 # Single words that are not skills on their own once a slash phrase is expanded.
@@ -166,6 +166,14 @@ Rules (from the career record, sections 11, 12.3 and 15):
 {entry_yaml}
 ```
 
+## Proof cards
+
+What the evidence folder says backs this entry: the contribution statement, what the collected
+sources establish, and their limits. Team credit and guidance must agree with it; where the proof
+narrows a claim, say so in `note` or hide the claim.
+
+{proof}
+
 ## Existing annotation
 
 ```yaml
@@ -188,8 +196,29 @@ Rules (from the career record, sections 11, 12.3 and 15):
 """
 
 
+def _proof_text(entry: Entry, cards: dict[str, ProofCard]) -> str:
+    ids = list(dict.fromkeys(c for claim in entry.claims for c in claim.evidence_ids))
+    if not ids:
+        return "No proof card maps to this entry."
+    blocks = []
+    for cid in ids:
+        card = cards.get(cid)
+        if card is None:
+            continue
+        claims = ", ".join(c.id for c in entry.claims if cid in c.evidence_ids)
+        lines = [f"### {card.id} · {card.title} ({card.strength}; claims {claims})",
+                 f"- Contribution: {card.contribution or 'not stated'}",
+                 f"- What the sources establish: {card.evidence_summary or 'not stated'}"]  # fmt: skip
+        if card.accepted_basis:
+            lines.append(f"- Accepted closure: {card.accepted_basis}")
+        lines += [f"- Source: {a.title} ({a.access}){' ' + a.url if a.public else ''}"
+                  for a in card.artifacts if a.id != "ACCOUNT-MASTER"]  # fmt: skip
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
 def write_packs(entries: list[Entry], areas: list[SkillArea], tracks: list[str], annotations_dir: Path,
-                out_dir: Path) -> list[Path]:  # fmt: skip
+                out_dir: Path, cards: dict[str, ProofCard] | None = None) -> list[Path]:  # fmt: skip
     """One prompt pack per entry that can head a resume section. Returns the written paths."""
     out_dir.mkdir(parents=True, exist_ok=True)
     skills = "\n".join(f"- **{a.area}:** {', '.join(a.skills)}" for a in areas)
@@ -205,7 +234,8 @@ def write_packs(entries: list[Entry], areas: list[SkillArea], tracks: list[str],
             "evidence_ids", "source", "metrics"}}}), sort_keys=False, allow_unicode=True, width=10_000)  # fmt: skip
         pack = out_dir / f"{entry.id}.md"
         pack.write_text(_INSTRUCTIONS.format(entry_id=entry.id, target=target, entry_yaml=dumped.strip(),
-                                             existing=existing, skills=skills, tracks=track_list, schema=schema),
+                                             existing=existing, skills=skills, tracks=track_list, schema=schema,
+                                             proof=_proof_text(entry, cards or {})),
                         encoding="utf-8")  # fmt: skip
         written.append(pack)
     return written
