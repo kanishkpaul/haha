@@ -24,6 +24,9 @@ from pathlib import Path
 
 import phonenumbers
 import yaml
+from docx import Document
+from docx.enum.text import WD_TAB_ALIGNMENT
+from docx.shared import Inches, Pt
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LAParams, LTTextContainer, LTTextLine
 
@@ -32,7 +35,7 @@ from .bank import Bank
 from .jobspec import norm
 from .models import Finding, JobSpec, Match, PlanEdits, Selection, Writing
 from .textutil import md_links, md_plain
-from .write import education_lines, entry_link
+from .write import contact_line, education_lines, entry_link
 
 RENDER_DIR = "render"
 YAML_FILE = "resume.yaml"
@@ -328,32 +331,35 @@ def expected_lines(bank: Bank, sel: Selection, w: Writing) -> list[str]:
     return out
 
 
-def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[str], pages: int) -> list[Finding]:
+def text_findings(raw: str, expected: list[str], contact: list[str], what: str = "PDF") -> list[Finding]:
+    """Every expected line present and in order in a file's extracted text, with no garbage glyphs."""
     findings: list[Finding] = []
 
-    def add(check: str, message: str, severity: str = "error") -> None:
-        findings.append(Finding(check=check, severity=severity, message=message))
+    def add(message: str) -> None:
+        findings.append(Finding(check="extraction", severity="error", message=message))
 
-    raw = layout.text()
     if found := sorted(set(_GARBAGE.findall(raw))):
-        add("extraction", f"the PDF text has ligature or unmapped glyphs: {' '.join(found)}")
+        add(f"the {what} text has ligature or unmapped glyphs: {' '.join(found)}")
     text = norm(raw)
     position = 0
     for line in expected:
         at = text.find(norm(line), position)
         if at < 0:
-            anywhere = text.find(norm(line))
-            if anywhere < 0:
-                add("extraction", f"missing from the PDF text: {line[:80]!r}")
-            else:
-                add("extraction", f"out of reading order in the PDF text: {line[:80]!r}")
+            where = "out of reading order in" if norm(line) in text else "missing from"
+            add(f"{where} the {what} text: {line[:80]!r}")
             continue
         position = at + len(norm(line))
     for item in contact:
         if norm(item) not in text:
-            add("extraction", f"contact detail not extractable: {item!r}")
+            add(f"contact detail not extractable from the {what}: {item!r}")
+    return findings
+
+
+def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[str], pages: int) -> list[Finding]:
+    findings = text_findings(layout.text(), expected, contact)
     if layout.pages > pages:
-        add("pages", f"the PDF has {layout.pages} pages; the plan allows {pages}")
+        findings.append(Finding(check="pages", severity="error",
+                                message=f"the PDF has {layout.pages} pages; the plan allows {pages}"))  # fmt: skip
     return findings
 
 
@@ -442,3 +448,77 @@ def save_calibration(path: Path, paper: str, lines_per_page: float) -> dict[str,
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
     return data
+
+
+# ---------------------------------------------------------------- DOCX copy
+
+PAGE_INCHES = {"letter": (8.5, 11.0), "a4": (8.27, 11.69)}
+
+
+def write_docx(path: Path, bank: Bank, sel: Selection, w: Writing, design: Design) -> Path:
+    """The same page as a Word file, for portals that want one: same sections, entries and bullets, plain
+    styles an ATS reads (headings, bullets, a right tab for dates), no tables or text boxes."""
+    doc = Document()
+    section = doc.sections[0]
+    width, height = PAGE_INCHES[sel.paper]
+    section.page_width, section.page_height = Inches(width), Inches(height)
+    for side in ("top_margin", "bottom_margin", "left_margin", "right_margin"):
+        setattr(section, side, Inches(design.margin))
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(design.font_size)
+    normal.paragraph_format.space_after = Pt(1)
+    right_tab = Inches(width - 2 * design.margin)
+
+    def heading(text: str) -> None:
+        p = doc.add_heading(text, level=2)
+        p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(6), Pt(2)
+
+    def line(left: str, right: str = "", bold: str = "") -> None:
+        p = doc.add_paragraph()
+        p.paragraph_format.tab_stops.add_tab_stop(right_tab, WD_TAB_ALIGNMENT.RIGHT)
+        if bold:
+            p.add_run(bold).bold = True
+        p.add_run(left)
+        if right:
+            p.add_run(f"\t{right}")
+
+    def bullet(text: str) -> None:
+        doc.add_paragraph(md_plain(text), style="List Bullet")
+
+    title = doc.add_heading(bank.profile.name, level=1)
+    title.paragraph_format.space_after = Pt(0)
+    doc.add_paragraph(md_plain(w.headline))
+    doc.add_paragraph(contact_line(bank))
+    heading("Education")
+    edu = bank.entries.get("EDU-01")
+    if edu:
+        dates = edu.dates.display if edu.dates and edu.dates.display else ""
+        line(f" — {edu.subtitle.split(' — ')[0]}", dates, bold=edu.name)
+        for extra in education_lines(bank)[1:]:
+            bullet(extra)
+    bullets: dict[str, list[str]] = {}
+    for b in w.bullets:
+        bullets.setdefault(b.entry_id, []).append(b.text)
+    current = None
+    for pick in sel.picks:
+        entry = bank.entries[pick.entry_id]
+        if pick.section != current:
+            current = pick.section
+            heading(current)
+        if entry.kind not in sel_mod.ONE_LINE_KINDS:
+            dates = entry.dates.display if entry.dates and entry.dates.display else ""
+            link = entry_link(bank, entry)
+            role = " — ".join(x for x in (entry.subtitle, link) if x)
+            line(f" — {role}" if role else "", dates, bold=md_plain(entry.name))
+        for text in bullets.get(entry.id, []):
+            bullet(text)
+    if w.skills:
+        heading("Skills")
+        for group, terms in w.skills.items():
+            line(", ".join(terms), bold=f"{group}: ")
+    doc.save(path)
+    return path
+
+
+def docx_text(path: Path) -> str:
+    return "\n".join(p.text for p in Document(str(path)).paragraphs)

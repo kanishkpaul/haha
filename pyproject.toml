@@ -9,6 +9,7 @@ dependencies = [
     "pdfminer.six>=20240706",
     "ortools>=9.11",
     "rendercv[full]>=2.0",
+    "python-docx>=1.1",
 ]
 
 [project.scripts]

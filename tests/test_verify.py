@@ -1,6 +1,6 @@
 import pytest
 
-from career_tailor import bank, cli, ingest, jobspec, match, paths, render, selection, verify, write
+from career_tailor import ats, bank, cli, ingest, jobspec, match, paths, render, selection, verify, write
 from career_tailor.models import (
     BulletReview,
     Coverage,
@@ -247,7 +247,8 @@ POSTING = Posting(key=SPEC.key, ats="lever", org="acme", company="Acme", title=S
                   text="- build reproducible evaluations\n- experience building browser agents\n")  # fmt: skip
 
 
-def test_cli_check_renders_then_grades(data_dir, capsys, draft, sel):
+def test_cli_check_renders_then_grades(data_dir, capsys, draft, sel, monkeypatch):
+    monkeypatch.setattr(ats, "available", lambda: False)  # the RM parse check has its own local test
     p = paths.load()
     built = bank.compile_bank(p)
     bank.save(built, p.bank)
@@ -279,7 +280,9 @@ def test_cli_check_renders_then_grades(data_dir, capsys, draft, sel):
     assert (
         report.startswith("# Check report: ML Engineer, Evaluation at Acme") and "**Waiting for the review.**" in report
     )
-    assert "## Render" in report and "- fits: 1 page(s)" in report and "- PDF: Ada_Example_Resume.pdf" in report
+    assert "## Render" in report and "- fits: 1 page(s)" in report
+    assert "- PDF: Ada_Example_Resume.pdf; DOCX: Ada_Example_Resume.docx" in report
+    assert (folder / "Ada_Example_Resume.docx").is_file()
     assert (folder / verify.PACK_FILE).is_file()
     assert (p.data / render.CALIBRATION_FILE).is_file()
 

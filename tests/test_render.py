@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from career_tailor import bank, paths, render, selection, write
+from career_tailor import ats, bank, paths, render, selection, write
 from career_tailor.models import Coverage, JobSpec, Match, Requirement, Support
 
 R1 = Requirement(
@@ -102,7 +102,7 @@ def test_extraction_findings():
     assert found == [
         "the PDF text has ligature or unmapped glyphs: (cid:3)",
         "missing from the PDF text: 'Third line'",
-        "contact detail not extractable: 'ada@example.com'",
+        "contact detail not extractable from the PDF: 'ada@example.com'",
         "the PDF has 2 pages; the plan allows 1",
     ]
     order = render.extraction_findings(layout((0, 760, 750, 36, "B"), (0, 740, 730, 36, "A")), ["A", "B"], [], 1)
@@ -153,3 +153,36 @@ def test_solve_honours_measured_lines_and_written_claims(mini_bank, sel):
     limited = selection.solve(mini_bank, SPEC, MATCH, only=only | {c for p in sel.picks for c in p.claim_ids
                                                                  if p.section == "Awards and selections"})  # fmt: skip
     assert {c for p in limited.picks if p.section != "Awards and selections" for c in p.claim_ids} <= only
+
+
+def test_docx_carries_the_same_page(mini_bank, sel, draft, tmp_path):
+    path = render.write_docx(tmp_path / "r.docx", mini_bank, sel, draft, render.Design())
+    text = render.docx_text(path)
+    assert render.text_findings(text, render.expected_lines(mini_bank, sel, draft), ["ada@example.com"], "DOCX") == []
+    assert text.startswith("Ada Example\nML Engineer, Evaluation\n")
+    from docx import Document
+
+    doc = Document(str(path))
+    assert round(doc.sections[0].page_width.inches, 2) == 8.27 and not doc.tables
+    assert sum(p.style.name == "List Bullet" for p in doc.paragraphs) == len(draft.bullets) + 1  # + the grade line
+
+
+def test_parse_check_turns_failed_checks_into_findings(monkeypatch, tmp_path):
+    result = {"overall_score": 70, "checks": [
+        {"id": "text_layer", "severity": "high", "status": "pass"},
+        {"id": "garbled_glyphs", "severity": "high", "status": "fail", "params": {"count": 4}},
+        {"id": "multi_column", "severity": "medium", "status": "warn", "params": {"pages": [1]}},
+    ]}  # fmt: skip
+    monkeypatch.setattr(ats, "call", lambda tool, args: result)
+    _, found = ats.parse_check(tmp_path / "r.pdf")
+    assert [(f.severity, f.message) for f in found] == [
+        ("error", "PDF garbled_glyphs: fail (count=4)"),
+        ("warning", "PDF multi_column: warn (pages=[1])"),
+    ]
+
+
+@pytest.mark.local
+def test_resume_matcher_parse_checks_a_render(mini_bank, sel, draft, tmp_path):
+    data = render.rendercv_input(mini_bank, SPEC, sel, draft, today=FIXTURE_TODAY)
+    result, found = ats.parse_check(render.render_pdf(tmp_path, data, "Ada_Example_Resume.pdf"))
+    assert result["extractability"] == "full" and not [f for f in found if f.severity == "error"]

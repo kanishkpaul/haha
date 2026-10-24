@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from . import (
     annotate,
+    ats,
     bank,
     ingest,
     jobspec,
@@ -20,7 +21,7 @@ from . import (
     verify,
     write,
 )
-from .models import Posting, Review, Selection, Writing
+from .models import Finding, Posting, Review, Selection, Writing
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -262,6 +263,22 @@ def cmd_check(args: argparse.Namespace) -> int:
     final.write_bytes(fitted.pdf.read_bytes())
     expected = render.expected_lines(b, sel, w)
     checks += render.extraction_findings(fitted.layout, expected, render.contact_details(b), sel.pages)
+    docx = render.write_docx(final.with_suffix(".docx"), b, sel, w, fitted.design)
+    checks += render.text_findings(render.docx_text(docx), expected, render.contact_details(b), "DOCX")
+    ats_lines = []
+    if ats.available():
+        for path in (final, docx):
+            try:
+                result, found = ats.parse_check(path)
+            except ats.RMError as err:
+                checks.append(Finding(check="ats", severity="warning", message=f"RM parse check skipped: {err}"))
+                continue
+            checks += found
+            ats_lines.append(f"Resume-Matcher parse check, {path.name}: {result.get('overall_score')}/100")
+    else:
+        checks.append(
+            Finding(check="ats", severity="warning", message="Resume-Matcher isn't available; no parse check")
+        )
     pack = verify.write_pack(folder, b, spec, sel, w)
     review, review_findings = None, []
     review_path = folder / verify.REVIEW_FILE
@@ -274,7 +291,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         if review_path.stat().st_mtime < draft_path.stat().st_mtime:
             print("warning: the draft changed after the review; review it again", file=sys.stderr)
         review_findings = verify.check_review(review, w, spec, sel, verify.page_text(b, spec, sel, w))
-    fit_lines = [*fitted.steps, f"PDF: {final.name}"]
+    fit_lines = [*fitted.steps, f"PDF: {final.name}; DOCX: {docx.name}", *ats_lines]
     report = folder / verify.REPORT_FILE
     report.write_text(verify.render_report(spec, w, checks, review, review_findings, fit_lines), encoding="utf-8")
     findings = checks + review_findings
