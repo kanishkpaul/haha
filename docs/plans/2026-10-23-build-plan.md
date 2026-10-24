@@ -147,4 +147,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (23 Oct 2026):** M2 done. Five live postings (Anthropic, Apollo Research, Prime Intellect, Cohere, METR) fetched across all three ATS APIs; all five specs pass `tailor job --check`; knockout reports: two "possible with conditions" (on-site abroad, degree in progress), three with no knockouts.
 
+**Status (24 Oct 2026):** proof work complete and in the bank (P1.7–P1.8). Record unchanged, so parsing is identical; proof linking, annotations, bank and M2 checks were rerun on the completed files. Proof backing for 220 record claims: 172 collected sources, 17 user-accepted closures, 31 personal account only. Independent claim audit not yet done. Review in `haha-data/PROOF_REVIEW.md`.
+
 M3–M8 phases are added here when each milestone starts.
