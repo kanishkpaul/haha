@@ -141,3 +141,27 @@ def test_packs_show_proof_cards(data_dir, mini_record):
     text = (data_dir / "work" / "annotate" / "ENG-01.md").read_text()
     assert "### CAREER-002 · " in text and "(collected; claims ENG-01.b1, ENG-01.b2)" in text
     assert "- Contribution: Built it alone." in text and "https://github.com/ada-example/clawbot" in text
+
+
+def test_claim_proof_can_only_weaken(data_dir, mini_record):
+    from test_bank import proof_cards
+
+    p = paths.load()
+    lines = mini_record.read_text().split("\n")
+    eng1 = lines.index("### ENG-01 · Clawbot — Local Browser Agent") + 1
+    proof_cards(p.proof_entries, bank.sha256(mini_record), [
+        ("CAREER-002", eng1, eng1 + 12, "partial", {"artifact_ids": ["REPO-claw"]}),
+        ("CAREER-009", 1, 2, "personal account only"),
+    ], [{"id": "REPO-claw", "title": "clawbot", "url": "https://github.com/ada-example/clawbot", "access": "public"}])  # fmt: skip
+    write_annotation(
+        p.annotations, {"entry_id": "ENG-01", "claim_proof": {"ENG-01.b2": "account", "ENG-01.b9": "account"}}
+    )
+    write_annotation(p.annotations, {"entry_id": "EXP-01", "claim_proof": {"EXP-01.b1": "collected"}})
+    built = bank.compile_bank(p)
+    assert (built.claim("ENG-01.b1").proof, built.claim("ENG-01.b2").proof) == ("collected", "account")
+    assert built.claim("EXP-01.b1").proof == "none"
+    problems = built.notes["problems"]
+    assert "annotation ENG-01: unknown claim ENG-01.b9" in problems
+    assert "annotation EXP-01: can't raise EXP-01.b1 from none to collected" in problems
+    summary = next(n for n in built.notes["info"] if n.startswith("Proof backing"))
+    assert "1 collected sources" in summary and "1 personal account only" in summary

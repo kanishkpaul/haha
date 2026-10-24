@@ -152,6 +152,7 @@ class Annotation(Model):
     claim_skills: dict[str, list[str]] = Field(default_factory=dict)
     hide_claims: list[str] = Field(default_factory=list)
     extra_claims: list[str] = Field(default_factory=list)  # verbatim sentences from the entry's notes or fields
+    claim_proof: dict[str, ProofStrength] = Field(default_factory=dict)  # downgrade where a card narrows a claim
     note: str = ""
 
 

@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 
 from . import record as record_mod
-from .annotate import add_extra_claims, apply_annotations, load_annotations, tag
+from .annotate import add_extra_claims, apply_annotations, apply_proof_overrides, load_annotations, tag
 from .extract import extract, load_updates
 from .models import BankManifest, Entry, MetricRow, Profile, ProofArtifact, ProofCard, Repo, SkillArea, Track
 from .paths import Paths
@@ -121,14 +121,17 @@ def link_proof(
             ))  # fmt: skip
             links += claim.public_links
         entry.public_links = list(dict.fromkeys(links))
+    return cards, None, proof_summary(entries, cards)
+
+
+def proof_summary(entries: list[Entry], cards: dict[str, ProofCard]) -> str:
     sourced = [c for e in entries for c in e.claims if c.source is not None]
     counts = {s: sum(c.proof == s for c in sourced) for s in _STRENGTH_ORDER}
     audited = bool(cards) and all(card.verification_status != "claim audit incomplete" for card in cards.values())
-    summary = (f"Proof backing for {len(sourced)} record claims: {counts['collected']} collected sources, "
-               f"{counts['accepted']} user-accepted closures, {counts['account']} personal account only, "
-               f"{counts['none']} not mapped to a card. Independent claim audit: "
-               f"{'done' if audited else 'not yet done (source collection only)'}.")  # fmt: skip
-    return cards, None, summary
+    return (f"Proof backing for {len(sourced)} record claims: {counts['collected']} collected sources, "
+            f"{counts['accepted']} user-accepted closures, {counts['account']} personal account only, "
+            f"{counts['none']} not mapped to a card. Independent claim audit: "
+            f"{'done' if audited else 'not yet done (source collection only)'}.")  # fmt: skip
 
 
 # ---------------------------------------------------------------- build
@@ -149,6 +152,9 @@ def compile_bank(p: Paths) -> Bank:
     notes["problems"] += apply_annotations(entries, annotations)
     proof, problem, coverage = link_proof(entries, p.proof_dir, record_sha)
     notes["problems"] += [problem] if problem else []
+    if proof:
+        notes["problems"] += apply_proof_overrides(entries, annotations)
+        coverage = proof_summary(entries, proof)
     notes["info"] += [coverage] if coverage else []
     notes["skills"] = tables.skill_notes
     notes["metrics"] = tables.metric_notes

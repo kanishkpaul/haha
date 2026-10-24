@@ -134,6 +134,27 @@ def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> li
     return problems
 
 
+_ORDER = ["collected", "accepted", "account", "none"]
+
+
+def apply_proof_overrides(entries: list[Entry], annotations: list[Annotation]) -> list[str]:
+    """Lower a claim's proof strength where its card's evidence doesn't reach that specific claim.
+
+    Runs after proof linking. Overrides can only weaken: an upgrade is refused and reported."""
+    claims = {c.id: c for e in entries for c in e.claims}
+    problems = []
+    for a in annotations:
+        for cid, strength in a.claim_proof.items():
+            claim = claims.get(cid)
+            if claim is None:
+                problems.append(f"annotation {a.entry_id}: unknown claim {cid}")
+            elif _ORDER.index(strength) < _ORDER.index(claim.proof):
+                problems.append(f"annotation {a.entry_id}: can't raise {cid} from {claim.proof} to {strength}")
+            else:
+                claim.proof = strength
+    return problems
+
+
 # ---------------------------------------------------------------- prompt packs
 
 _INSTRUCTIONS = """\
@@ -157,6 +178,9 @@ Rules (from the career record, sections 11, 12.3 and 15):
 - `hide_claims`: claim ids that must never appear on a resume (confidential, superseded, or a
   plan rather than a result). Leave out claims that are merely weak.
 - `tracks`: role-track targets this entry should lead or support, from the tracks list below.
+- `claim_proof`: per-claim proof strength where a proof card's evidence summary says that specific
+  claim (a number, placement, duration, sole ownership) isn't supported by the collected sources:
+  set it to "account". Never raise a claim above what its cards show.
 - `extra_claims`: sentences copied word for word from this entry's notes or fields that state a
   result or contribution, for entries whose content sits only in notes. Never paraphrase.
 
