@@ -161,4 +161,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P4.3** | `selection.json` and `plan.md` (picks with the requirements each covers, line use, what was left out and why); pins and bans from `plan.edits.yaml`; `tailor plan` solves once `match.json` is valid | CLI test with pins and bans |
 | **P4.4** | The five real jobs through selection | five plans within budget with no exclusion broken |
 
+**Status (25 Oct 2026):** M4 done. All five jobs have a `plan.md` and `selection.json` within the estimated page budget (Letter 56 lines, A4 60), with no same-work exclusion broken; each solve takes under a second. Matched coverage lost to the page: Anthropic R10 (statistics and experimental design, strong to partial) and METR R2 (graphs and write-ups). Five award/project pairs without a shared proof card were linked with overlay `same_work`. Line costs are estimates until M7 measures the rendered page.
+
 M5–M8 phases are added here when each milestone starts.

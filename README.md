@@ -68,7 +68,7 @@ flowchart LR
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
 | 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
 
-> **Status:** stages 0–2 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page. Stages 4–7 are still docstrings and dreams, and politely say so.
+> **Status:** stages 0–3 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page. Stages 4–7 are still docstrings and dreams, and politely say so.
 
 ## 🚀 Running it
 
