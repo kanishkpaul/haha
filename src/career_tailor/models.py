@@ -373,6 +373,16 @@ class TailoredBullet(Model):
     claim_ids: list[str]
 
 
+class Writing(Model):
+    """The written parts of one resume (draft.json). Headings, dates, contact and education come from the bank."""
+
+    job: str
+    headline: str
+    summary: str = ""
+    bullets: list[TailoredBullet] = Field(default_factory=list)  # award lines included, one bullet each
+    skills: dict[str, list[str]] = Field(default_factory=dict)  # group label -> skills-bank terms
+
+
 class Finding(Model):
     check: str
     severity: Literal["error", "warning"]

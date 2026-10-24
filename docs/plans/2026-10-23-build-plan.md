@@ -163,4 +163,9 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (25 Oct 2026):** M4 done. All five jobs have a `plan.md` and `selection.json` within the estimated page budget (Letter 56 lines, A4 60), with no same-work exclusion broken; each solve takes under a second. Matched coverage lost to the page: Anthropic R10 (statistics and experimental design, strong to partial) and METR R2 (graphs and write-ups). Five award/project pairs without a shared proof card were linked with overlay `same_work`. Line costs are estimates until M7 measures the rendered page.
 
-M5–M8 phases are added here when each milestone starts.
+| **P5.1** | `write.py` skeleton: the `Writing` model (`draft.json`: headline, optional summary, bullets citing claim ids, skills); contact line, education, entry headings and dates, and links to the candidate's own public repositories from the bank; skills suggested from the skills bank; `draft.md` rendering | skeleton tests on the fixture |
+| **P5.2** | Write prompt pack (`write.prompt.md`): per bullet the source claim, its conditions and team credit, the requirements it supports with their posting quotes, the job's keywords and a character budget from the plan's line budget; voice rules, banned phrases, and voice samples from the record's earlier resumes (facts there may be outdated) | pack tests |
+| **P5.3** | Voice guard and `tailor write`: every picked claim cited once and only by its own entry; text within its character budget; no number, ownership word ("led", "solo", "founded") or banned phrase that the cited claims don't support; drift warning when a bullet strays from its sources; headline from the posting or the record's track headlines; skills only from the skills bank | guard tests reject invented numbers and upgraded ownership |
+| **P5.4** | Drafts for the five real jobs | five drafts pass the guard |
+
+M6–M8 phases are added here when each milestone starts.
