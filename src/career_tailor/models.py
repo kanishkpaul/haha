@@ -338,17 +338,33 @@ class Match(Model):
     coverage: list[Coverage] = Field(default_factory=list)
 
 
+class PlanEdits(Model):
+    """Your changes to a plan (plan.edits.yaml): entry or claim ids to force in or keep out."""
+
+    pin: list[str] = Field(default_factory=list)
+    ban: list[str] = Field(default_factory=list)
+    pages: int | None = Field(default=None, ge=1, le=3)
+
+
 class Pick(Model):
     entry_id: str
+    section: str
     claim_ids: list[str]
-    reason: str
+    lines: dict[str, int] = Field(default_factory=dict)  # claim id -> line budget for its bullet
+    covers: list[str] = Field(default_factory=list)  # requirement ids its claims support
 
 
 class Selection(Model):
     job: str
+    track: str = ""
+    paper: Literal["letter", "a4"] = "letter"
     pages: int = 1
+    lines_budget: float = 0
+    lines_used: float = 0
     picks: list[Pick] = Field(default_factory=list)
+    covered: dict[str, Literal["strong", "partial", "none"]] = Field(default_factory=dict)  # after selection
     excluded: dict[str, str] = Field(default_factory=dict)  # entry id -> why left out
+    edits: PlanEdits = Field(default_factory=PlanEdits)
 
 
 class TailoredBullet(Model):

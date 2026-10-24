@@ -1,7 +1,7 @@
 import pytest
 
 from career_tailor import bank, paths, selection
-from career_tailor.models import JobSpec
+from career_tailor.models import Coverage, JobSpec, Match, PlanEdits, Requirement, Support
 
 
 @pytest.fixture
@@ -72,3 +72,86 @@ def test_one_result_stated_twice_in_an_entry(mini_bank):
     pairs = {(a, b): why for a, b, why in selection.exclusions(mini_bank)}
     assert pairs[(("EXP-01.b1",), ("EXP-01.b2",))] == "same result (54/55)"
     assert not any("ENG-01.b1" in a + b for a, b in pairs if pairs[(a, b)].startswith("same result"))
+
+
+# ---------------------------------------------------------------- solver
+
+R1 = Requirement(
+    id="R1", text="Reproducible evaluation", quote="build reproducible evaluations", kind="basic", weight=3
+)
+R2 = Requirement(id="R2", text="Browser agents", quote="experience building browser agents", kind="preferred")
+SPEC = JobSpec(key="test:acme:1", company="Acme", title="ML Engineer", location="Berlin", requirements=[R1, R2])
+
+
+def coverage(**supports):
+    return Match(key=SPEC.key, track="ML evaluation", coverage=[
+        Coverage(requirement_id=rid, verdict="strong" if any(s == "strong" for _, s in sups) else "partial",
+                 support=[Support(claim_id=c, strength=s, quote="x x x") for c, s in sups])
+        for rid, sups in supports.items()
+    ])  # fmt: skip
+
+
+MATCH = coverage(R1=[("EXP-01.b1", "strong")], R2=[("ENG-01.b1", "partial")])
+
+
+@pytest.fixture
+def tight(monkeypatch):
+    """A page with room for only a few items, so the solver has to choose."""
+    layouts = {k: selection.Layout(paper=k, lines_per_page=24, chars_per_line=100) for k in ("letter", "a4")}
+    monkeypatch.setattr(selection, "LAYOUTS", layouts)
+
+
+def test_plan_fits_the_budget_and_follows_the_rules(mini_bank):
+    sel = selection.solve(mini_bank, SPEC, MATCH)
+    assert sel.paper == "a4" and sel.pages == 1 and sel.track == "ML evaluation"
+    assert sel.lines_used <= sel.lines_budget == 60
+    sections = [p.section for p in sel.picks]
+    assert "Experience" in sections and sections == sorted(sections, key=selection.SECTION_ORDER.index)
+    projects = [p for p in sel.picks if p.section in ("Research", "Projects")]
+    assert 2 <= len(projects) <= 4
+    assert all(len(p.claim_ids) == 1 for p in sel.picks if p.section == "Awards and selections")
+    assert sel.covered == {"R1": "strong", "R2": "partial"}
+    assert next(p for p in sel.picks if p.entry_id == "EXP-01").covers == ["R1"]
+
+
+def test_tight_page_keeps_what_the_job_asks_for(mini_bank, tight):
+    sel = selection.solve(mini_bank, SPEC, MATCH)
+    picked = {c for p in sel.picks for c in p.claim_ids}
+    assert {"EXP-01.b1", "ENG-01.b1"} <= picked
+    assert sel.lines_used <= 24
+
+
+def test_same_work_is_never_picked_twice(mini_bank):
+    for entry_id in ("EXP-01", "RES-01"):
+        for claim in mini_bank.entries[entry_id].claims:
+            claim.evidence_ids = ["CAREER-001"]
+    m = coverage(R1=[("EXP-01.b1", "strong"), ("RES-01.l1", "strong")], R2=[("ENG-01.b1", "partial")])
+    sel = selection.solve(mini_bank, SPEC, m)
+    entries = {p.entry_id for p in sel.picks}
+    assert len(entries & {"EXP-01", "RES-01"}) == 1
+    left = ({"EXP-01", "RES-01"} - entries).pop()
+    assert sel.excluded[left] == f"same work as {(entries & {'EXP-01', 'RES-01'}).pop()}"
+
+
+def test_pins_and_bans(mini_bank, tight):
+    edits = PlanEdits(pin=["ENG-03.r1"], ban=["EXP-01"])
+    sel = selection.solve(mini_bank, SPEC, MATCH, edits)
+    picked = {c for p in sel.picks for c in p.claim_ids}
+    assert "ENG-03.r1" in picked and not any(c.startswith("EXP-01.") for c in picked)
+    assert sel.covered["R1"] == "none"
+    assert sel.excluded["EXP-01"] == "banned in plan.edits.yaml"
+    assert sel.edits == edits
+
+
+def test_bad_edits_are_reported(mini_bank, tight):
+    with pytest.raises(selection.SelectionError, match="ENG-99"):
+        selection.solve(mini_bank, SPEC, MATCH, PlanEdits(pin=["ENG-99"]))
+    everything = [c.id for e in mini_bank.entries.values() if e.kind != "education" for c in e.claims]
+    with pytest.raises(selection.SelectionError, match="no plan fits"):
+        selection.solve(mini_bank, SPEC, MATCH, PlanEdits(pin=everything))
+
+
+def test_pages_override_and_determinism(mini_bank):
+    two = selection.solve(mini_bank, SPEC, MATCH, PlanEdits(pages=2))
+    assert two.pages == 2 and two.lines_budget == 120
+    assert selection.solve(mini_bank, SPEC, MATCH) == selection.solve(mini_bank, SPEC, MATCH)

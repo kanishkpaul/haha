@@ -1,10 +1,15 @@
 """Stage 3: choose what fits the page.
 
-This module holds the page model: how many lines each item costs at the
-template's measure, which sections an entry belongs to, and which items must
-not appear together because they describe the same work (two entries citing one
-proof card, overlay `same_work` links, or two claims sharing a distinctive
-number). Costs are estimates until the renderer (M7) measures real lines.
+The page model says how many lines each item costs at the template's measure,
+which section an entry belongs to, and which items must not appear together
+because they describe the same work (two entries citing one proof card, overlay
+`same_work` links, or two claims sharing a distinctive number). Costs are
+estimates until the renderer (M7) measures real lines.
+
+`solve` picks entries and claims with CP-SAT: a boolean per entry and per claim,
+the page budget and section rules as constraints, and an objective led by
+weighted requirement coverage from `match.json`, then proof, metrics, recency
+and fit to the job's track.
 """
 
 import math
@@ -13,10 +18,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
 
+from ortools.sat.python import cp_model
+
 from . import numbers
 from .bank import Bank
 from .match import eligible
-from .models import Claim, Entry, JobSpec
+from .models import Claim, Entry, JobSpec, Match, Pick, PlanEdits, Selection
 from .textutil import md_plain
 
 SECTIONS = {
@@ -139,4 +146,215 @@ def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
             shared = {t for t in shared if numbers.is_unique(t)} if set(a.evidence_ids) & set(b.evidence_ids) else set()
         if shared:
             add((c1,), (c2,), f"same result ({', '.join(sorted(shared))})")
+    return out
+
+
+# ---------------------------------------------------------------- solver
+
+KIND_FACTOR = {"basic": 3, "responsibility": 2, "preferred": 1}
+PROOF_VALUE = {"collected": 12, "accepted": 8, "account": 3, "none": 3}
+# An award line earns its place with a placement or a selection, not an interview or an invitation.
+_PLACED = re.compile(
+    r"\b(?:top[- ]|\d+(?:st|nd|rd|th)\b|winner|won\b|runner-up|selected|first place|accepted into)", re.I
+)
+SCALE = 10  # line costs in tenths of a line
+
+
+@dataclass(frozen=True)
+class Rules:
+    """Section limits for a page count, following the record's assembly guidance (section 12)."""
+
+    projects: tuple[int, int]  # research + engineering entries
+    awards: int  # one-line award and selection entries
+    leadership: int
+    bullets: dict[str, int]  # max bullets per entry by kind ("catalog" for catalog entries)
+
+    @classmethod
+    def for_pages(cls, pages: int) -> "Rules":
+        if pages == 1:
+            bullets = {"experience": 4, "research": 3, "engineering": 3, "leadership": 2, "catalog": 2}
+            return cls(projects=(2, 4), awards=3, leadership=1, bullets=bullets)
+        bullets = {"experience": 5, "research": 4, "engineering": 4, "leadership": 3, "catalog": 3}
+        return cls(projects=(2, 4 + 3 * (pages - 1)), awards=3 + 3 * (pages - 1), leadership=2, bullets=bullets)
+
+
+class SelectionError(ValueError):
+    pass
+
+
+def _recency(entry: Entry) -> int:
+    end = (entry.dates.end or entry.dates.start or "") if entry.dates else ""
+    if end == "present":
+        return 10
+    year = int(end[:4]) if end[:4].isdigit() else 0
+    return {2026: 8, 2025: 4, 2024: 2}.get(year, 0)
+
+
+def _sort_key(entry: Entry) -> tuple[str, str]:
+    if not entry.dates:
+        return ("", "")
+    end = entry.dates.end or entry.dates.start or ""
+    return ("9999" if end == "present" else end, entry.dates.start or "")
+
+
+def fixed_lines(layout: Layout, pages: int, bank: Bank) -> float:
+    """Header, education and skills: on every resume, outside the solver's choice."""
+    education = layout.education + (1 if pages > 1 and "EDU-02" in bank.entries else 0)
+    return layout.header + layout.section + education + layout.section + layout.skills
+
+
+def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, time_limit: float = 20.0) -> Selection:
+    edits = edits or PlanEdits()
+    pages = edits.pages or spec.pages
+    paper = paper_for(spec)
+    layout = LAYOUTS[paper]
+    rules = Rules.for_pages(pages)
+    pool = [(e, c) for e, c in eligible(bank) if e.kind != "education"]
+    claims = {c.id: c for _, c in pool}
+    entries = {e.id: e for e, _ in pool}
+    unknown = [r for r in edits.pin + edits.ban if r not in claims and r not in entries]
+    if unknown:
+        raise SelectionError(f"plan.edits.yaml names items that can't go on a resume: {', '.join(unknown)}")
+
+    model = cp_model.CpModel()
+    x = {eid: model.new_bool_var(f"x_{eid}") for eid in entries}
+    y = {cid: model.new_bool_var(f"y_{cid}") for cid in claims}
+    cost = []
+    by_entry: dict[str, list[str]] = defaultdict(list)
+    for e, c in pool:
+        by_entry[e.id].append(c.id)
+        model.add_implication(y[c.id], x[e.id])
+        cost.append(SCALE * claim_lines(c, e, layout) * y[c.id])
+    for eid, cids in by_entry.items():
+        entry = entries[eid]
+        chosen = sum(y[c] for c in cids)
+        if entry.kind in ONE_LINE_KINDS:
+            model.add(chosen == x[eid])
+            continue
+        model.add(chosen >= x[eid])
+        kind = "catalog" if is_catalog(entry) else entry.kind
+        model.add(chosen <= rules.bullets[kind] * x[eid])
+        if kind in ("experience", "research", "engineering"):
+            model.add(chosen >= min(2, len(cids)) * x[eid])
+        cost.append(int(SCALE * layout.entry) * x[eid])
+    sections: dict[str, list[str]] = defaultdict(list)
+    for eid, entry in entries.items():
+        sections[SECTIONS[entry.kind]].append(eid)
+    for name, eids in sections.items():
+        used = model.new_bool_var(f"s_{name}")
+        for eid in eids:
+            model.add_implication(x[eid], used)
+        cost.append(int(SCALE * layout.section) * used)
+    budget = layout.budget(pages) - fixed_lines(layout, pages, bank)
+    model.add(sum(cost) <= int(SCALE * budget))
+
+    def count(kinds: set[str]) -> cp_model.LinearExpr:
+        return sum(x[eid] for eid, e in entries.items() if e.kind in kinds)
+
+    if any(e.kind == "experience" for e in entries.values()):
+        model.add(count({"experience"}) >= 1)
+    model.add(count({"research", "engineering"}) >= rules.projects[0])
+    model.add(count({"research", "engineering"}) <= rules.projects[1])
+    model.add(count(ONE_LINE_KINDS) <= rules.awards)
+    model.add(count({"leadership"}) <= rules.leadership)
+    for a, b, _ in exclusions(bank):
+        for ca in a:
+            for cb in b:
+                if ca in y and cb in y:
+                    model.add(y[ca] + y[cb] <= 1)
+    for ref in edits.pin:
+        model.add((y if ref in claims else x)[ref] == 1)
+    for ref in edits.ban:
+        model.add((y if ref in claims else x)[ref] == 0)
+
+    reqs = {r.id: r for r in spec.requirements}
+    value = []
+    for cov in m.coverage:
+        supports = [s for s in cov.support if s.claim_id in y]
+        if not supports or cov.requirement_id not in reqs:
+            continue
+        r = reqs[cov.requirement_id]
+        w = r.weight * KIND_FACTOR.get(r.kind, 1)
+        n = sum(y[s.claim_id] for s in supports)
+        hit = model.new_bool_var(f"any_{r.id}")
+        model.add(hit <= n)
+        extra = model.new_int_var(0, 2, f"extra_{r.id}")
+        model.add(extra <= n - hit)
+        value += [50 * w * hit, 10 * w * extra]
+        strong = [y[s.claim_id] for s in supports if s.strength == "strong"]
+        if strong:
+            top = model.new_bool_var(f"strong_{r.id}")
+            model.add(top <= sum(strong))
+            value.append(50 * w * top)
+    track = next((t for t in bank.tables.tracks if t.target == m.track), None)
+    lead = set(track.lead_entries) if track else set()
+    support = set(track.support_entries) if track else set()
+    for cid, c in claims.items():
+        quality = PROOF_VALUE[c.proof] + (6 if c.metrics else 0) + (4 if c.kind == "lead" else 0)
+        quality += 15 if cid in lead else 8 if cid in support else 0
+        if ".n" in cid:  # promoted from the entry's notes: supporting detail, not a headline bullet
+            quality -= 4
+        if entries[c.entry_id].kind in ONE_LINE_KINDS:
+            quality += 15 if _PLACED.search(md_plain(c.text)) else 0
+        value.append(quality * y[cid])
+    for eid, entry in entries.items():
+        fit = 25 if eid in lead else 12 if eid in support else 0
+        recency = _recency(entry) // (2 if entry.kind in ONE_LINE_KINDS else 1)
+        value.append((fit + recency) * x[eid])
+    model.maximize(sum(value))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = time_limit
+    solver.parameters.num_workers = 1  # deterministic: the same inputs give the same plan
+    status = solver.solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise SelectionError("no plan fits: check pins in plan.edits.yaml against the page budget and exclusions")
+
+    picked = {cid for cid in claims if solver.value(y[cid])}
+    return _selection(bank, spec, m, edits, pages, layout, budget, picked, solver.value(sum(cost)) / SCALE)
+
+
+def _selection(bank, spec, m, edits, pages, layout, budget, picked, used) -> Selection:
+    fixed = fixed_lines(layout, pages, bank)
+    supports_of: dict[str, list[str]] = defaultdict(list)
+    for cov in m.coverage:
+        for sup in cov.support:
+            supports_of[sup.claim_id].append(cov.requirement_id)
+    picks = []
+    for entry in bank.entries.values():
+        cids = [c.id for c in entry.claims if c.id in picked]
+        if not cids:
+            continue
+        covers = sorted({r for c in cids for r in supports_of.get(c, [])}, key=lambda r: (len(r), r))
+        lines = {c: claim_lines(bank.claim(c), entry, layout) for c in cids}
+        picks.append(Pick(entry_id=entry.id, section=SECTIONS[entry.kind], claim_ids=cids, lines=lines, covers=covers))
+    picks.sort(key=lambda p: _sort_key(bank.entries[p.entry_id]), reverse=True)  # newest first within a section
+    picks.sort(key=lambda p: SECTION_ORDER.index(p.section))
+    covered = {}
+    for cov in m.coverage:
+        chosen = [s for s in cov.support if s.claim_id in picked]
+        covered[cov.requirement_id] = (
+            "strong" if any(s.strength == "strong" for s in chosen) else "partial" if chosen else "none"
+        )
+    excluded = _excluded(bank, m, edits, picked)
+    return Selection(job=spec.key, track=m.track, paper=layout.paper, pages=pages, lines_budget=budget + fixed,
+                     lines_used=round(used + fixed, 1), picks=picks, covered=covered, excluded=excluded,
+                     edits=edits)  # fmt: skip
+
+
+def _excluded(bank: Bank, m: Match, edits: PlanEdits, picked: set[str]) -> dict[str, str]:
+    """Why each entry with matched support was left out."""
+    picked_entries = {c.split(".")[0] for c in picked}
+    pairs = exclusions(bank)
+    out = {}
+    for entry_id in dict.fromkeys(s.claim_id.split(".")[0] for c in m.coverage for s in c.support):
+        if entry_id in picked_entries or entry_id not in bank.entries:
+            continue
+        own = {c.id for c in bank.entries[entry_id].claims}
+        if entry_id in edits.ban or own & set(edits.ban) == own:
+            out[entry_id] = "banned in plan.edits.yaml"
+            continue
+        rivals = sorted({c.split(".")[0] for a, b, _ in pairs for side, other in ((a, b), (b, a))
+                         if set(side) & own for c in other if c in picked})  # fmt: skip
+        out[entry_id] = f"same work as {', '.join(rivals)}" if rivals else "page budget"
     return out
