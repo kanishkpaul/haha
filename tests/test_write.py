@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from career_tailor import bank, paths, selection, write
@@ -68,3 +70,51 @@ def test_source_writing_and_draft(mini_bank, sel):
     award = next(p for p in sel.picks if p.section == "Awards and selections")
     award_line = next(b.text for b in w.bullets if b.entry_id == award.entry_id)
     assert f"- {award_line}" in draft and f"**{mini_bank.entries[award.entry_id].name}**" not in draft
+
+
+RECORD_WITH_ARCHIVE = """# Record
+
+## 17. Megadoc
+
+• Not an archive bullet.
+
+## 18. Prior resumes
+
+```text
+• Built a reproducible evaluation harness for browser agents with seeded runs and
+  regression cases.
+• Organised a campus dance festival.
+```
+"""
+
+
+def test_style_seeds_come_from_section_18_closest_first():
+    seeds = write.style_seeds(RECORD_WITH_ARCHIVE, SPEC)
+    assert seeds[0] == ("Built a reproducible evaluation harness for browser agents with seeded runs and "
+                        "regression cases.")  # fmt: skip
+    assert "Not an archive bullet." not in seeds and len(seeds) == 2
+    assert write.style_seeds("# no archive", SPEC) == []
+
+
+def test_pack_lists_each_claim_with_budget_conditions_and_requirements(mini_bank, sel, tmp_path):
+    pack = write.write_pack(tmp_path, mini_bank, SPEC, MATCH, sel, RECORD_WITH_ARCHIVE).read_text()
+    budget = (
+        selection.LAYOUTS["a4"].chars_per_line * next(p for p in sel.picks if p.entry_id == "EXP-01").lines["EXP-01.b1"]
+    )
+    assert f"- `EXP-01.b1` · bullet, at most {budget} characters · proof none" in pack
+    assert "  - Supports R1 (basic): “build reproducible evaluations”" in pack
+    if "EXP-01.b2" in {c for p in sel.picks for c in p.claim_ids}:
+        assert "  - Condition to keep with its metric: 97.5% vs 4.0% — Classifiable cases only" in pack
+    assert "ongoing: present tense" in pack
+    assert "Keywords: evaluation (evals), browser agents." in pack
+    assert "“spearheaded”" in pack and "`ML Engineer, Evaluation`" in pack
+    assert "- Built a reproducible evaluation harness for browser agents" in pack
+    assert '"headline"' in pack
+    assert sum(len(p.claim_ids) for p in sel.picks) == len(re.findall(r"\n- `[A-Z]+-\d+\.\w+`", pack))
+
+
+def test_summary_only_when_the_page_has_room(mini_bank, sel, tmp_path):
+    full = sel.model_copy(update={"lines_used": sel.lines_budget})
+    assert 'leave it empty ("")' in write.write_pack(tmp_path, mini_bank, SPEC, MATCH, full, "").read_text()
+    roomy = sel.model_copy(update={"lines_used": sel.lines_budget - 5})
+    assert "optional, at most" in write.write_pack(tmp_path, mini_bank, SPEC, MATCH, roomy, "").read_text()
