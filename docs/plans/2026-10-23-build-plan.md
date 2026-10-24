@@ -177,4 +177,12 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (25 Oct 2026):** M6 done. All five drafts pass `tailor check` with no errors: facts, policy and style clean, every bullet entailed by its claims, and every requirement that the plan supports strongly reads as Meets to the screener. Six wording issues were fixed on the way (a hedge strengthened, "refine" turned into "redirect", a historical test count stated as current, a budget that funded hosting widened to the whole prototype, an acronym without its long form, team work not visible). Estimated screener grades: METR A, Prime Intellect A, Apollo B (basic 79% Meets), Anthropic C (50%), Cohere C (74%); the C grades come from asks the record doesn't support (post-training, distributed LLM training, production systems, published papers), not from the writing.
 
-M7–M8 phases are added here when each milestone starts.
+| **P7.1** | `render.py`: RenderCV input from the bank and the checked draft (one column, standard headings, Letter or A4, plain-text links only to the candidate's public repositories, international phone format); `Design` knobs for type size, leading, margins and spacing; RenderCV/Typst render to PDF | input-structure tests; a fixture render |
+| **P7.2** | Extraction check with pdfminer: every line of the draft present in the PDF text and in order, no ligature or (cid:) garbage, contact details extractable, page count | extraction tests on rendered fixtures |
+| **P7.3** | Fit loop: measure pages and last-page fill; tighten or loosen the design within bounds; if it still overflows, re-solve the plan on a calibrated budget using only written bullets, and save the calibration for later plans | fit tests: overflow and underfill corrected |
+| **P7.4** | DOCX copy (python-docx) from the same content; Resume-Matcher's `parse_check_file` on the PDF and DOCX as the cross-check | DOCX round-trip test; RM parse-check locally |
+| **P7.5** | The five real jobs rendered | five one-page PDFs that pass extraction and the RM parse-check |
+
+Decision change (25 Oct 2026): Resume-Matcher's `swiss-single` export only renders resumes saved in its database, and saving one per job would use its five master slots. The M7 cross-check is therefore RM's `parse_check_file` on haha's PDF, which writes nothing; an RM export can follow in M8 if wanted.
+
+M8 phases are added here when it starts.
