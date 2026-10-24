@@ -108,7 +108,7 @@ def test_pack_lists_each_claim_with_budget_conditions_and_requirements(mini_bank
     assert "  - Supports R1 (basic): “build reproducible evaluations”" in pack
     if "EXP-01.b2" in {c for p in sel.picks for c in p.claim_ids}:
         assert "  - Condition to keep with its metric: 97.5% vs 4.0% — Classifiable cases only" in pack
-    assert "ongoing: present tense" in pack
+    assert "Sep 2030 – Present · ongoing" in pack
     assert "Keywords: evaluation (evals), browser agents." in pack
     assert "“spearheaded”" in pack and "`ML Engineer, Evaluation`" in pack
     assert "- Built a reproducible evaluation harness for browser agents" in pack
@@ -169,6 +169,14 @@ def test_upgraded_ownership_is_rejected(mini_bank, sel, baseline):
     w = edited(baseline, "EXP-01.b1", "Led and independently built a reproducible evaluation over 10,000 utterances.")
     assert errors(write.guard(w, mini_bank, SPEC, MATCH, sel), "ownership") == [
         "EXP-01.b1 claims independent, lead ownership that its claims don't state"
+    ]
+
+
+def test_a_team_note_naming_another_lead_does_not_license_led(mini_bank, sel, baseline):
+    mini_bank.entries["EXP-01"].notes["Team credit"] = "Bob Sample was the submitted lead."
+    w = edited(baseline, "EXP-01.b1", "Led a reproducible evaluation over 10,000 utterances across 12 languages.")
+    assert errors(write.guard(w, mini_bank, SPEC, MATCH, sel), "ownership") == [
+        "EXP-01.b1 claims lead ownership that its claims don't state"
     ]
 
 

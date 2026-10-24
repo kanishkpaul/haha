@@ -198,7 +198,8 @@ The plan (`plan.md`) already chose what goes on the page. Your job is the wordin
   or "sole" unless the claim says so.
 - **Shape:** start with the strongest true verb; say what was done, how it was measured, and how
   (Google's X-Y-Z), in that order of priority. No first person; end each bullet with a full stop.
-  Past tense for finished work, present tense for entries that run to Present.
+  Past tense for completed results, even inside an ongoing entry; present tense only for work still
+  under way ("Co-authoring a manuscript").
 - **The posting's words where they are true.** If the claim is an evaluation, call it one; if the posting
   says "benchmark" and the claim built one, say "benchmark". Don't stretch a word to cover something the
   claim doesn't show. Keywords: {keywords}.
@@ -253,7 +254,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
     for pick in sel.picks:
         entry = bank.entries[pick.entry_id]
         ongoing = bool(entry.dates and entry.dates.end == "present")
-        head = f"### {entry_label(entry)}" + (" · ongoing: present tense" if ongoing else "")
+        head = f"### {entry_label(entry)}" + (" · ongoing" if ongoing else "")
         lines = [head, ""]
         if entry.notes.get("Team credit"):
             lines += [f"Team credit: {md_plain(entry.notes['Team credit'])}", ""]
@@ -363,7 +364,9 @@ def guard(w: Writing, bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> Ch
         if extra := numbers.tokens(text, years=True) - numbers.tokens(source, years=True):
             add("numbers", "error", f"{'+'.join(b.claim_ids)} states {', '.join(sorted(extra))}, "
                                     "which its claims don't", text)  # fmt: skip
-        if upgraded := _ownership(text) - _ownership(source):
+        # Ownership comes from the claims and the role title only: a team-credit note may name someone else's role.
+        own_source = md_plain(" ".join([entry.subtitle, *(f"{c.label} {c.text}" for c in claims)]))
+        if upgraded := _ownership(text) - _ownership(own_source):
             add("ownership", "error", f"{'+'.join(b.claim_ids)} claims {', '.join(sorted(upgraded))} ownership "
                                       "that its claims don't state", text)  # fmt: skip
         lowered = text.lower()
