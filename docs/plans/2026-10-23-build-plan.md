@@ -168,4 +168,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P5.3** | Voice guard and `tailor write`: every picked claim cited once and only by its own entry; text within its character budget; no number, ownership word ("led", "solo", "founded") or banned phrase that the cited claims don't support; drift warning when a bullet strays from its sources; headline from the posting or the record's track headlines; skills only from the skills bank | guard tests reject invented numbers and upgraded ownership |
 | **P5.4** | Drafts for the five real jobs | five drafts pass the guard |
 
+**Status (25 Oct 2026):** M5 done. All five jobs have a `draft.json` and `draft.md` that pass the guard with no errors or warnings: every planned claim cited once, every bullet within its character budget (4–13 characters to spare at the tightest), no number or ownership word beyond the cited claims, skills only from the skills bank. Headlines use the record's track headlines (Evals for four jobs, Agent infrastructure for Prime Intellect) rather than posting titles that would imply post-training experience or a company job title. The guard is a first line; M6 does the full fact check and entailment review.
+
 M6–M8 phases are added here when each milestone starts.
