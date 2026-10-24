@@ -1,7 +1,17 @@
 import pytest
 
 from career_tailor import bank, paths, selection, verify, write
-from career_tailor.models import Coverage, JobSpec, Match, Requirement, Support, TailoredBullet
+from career_tailor.models import (
+    BulletReview,
+    Coverage,
+    JobSpec,
+    Match,
+    Requirement,
+    Review,
+    ScreenerVerdict,
+    Support,
+    TailoredBullet,
+)
 
 R1 = Requirement(
     id="R1", text="Reproducible evaluation", quote="build reproducible evaluations", kind="basic", weight=3
@@ -167,3 +177,65 @@ def test_numbers_from_two_claims_in_one_line(mini_bank, sel, draft):
     assert messages(verify.lint(w, mini_bank, SPEC, sel), "protocol") == [
         "EXP-01.b1+EXP-01.b2: results from EXP-01.b1, EXP-01.b2 in one line; check they come from the same protocol"
     ]
+
+
+# ---------------------------------------------------------------- review
+
+
+def honest_review(w, sel):
+    return Review(
+        job=SPEC.key,
+        bullets=[BulletReview(claim_ids=b.claim_ids, entailed=True) for b in w.bullets],
+        screener=[ScreenerVerdict(requirement_id="R1", verdict="meets", quote="Built a reproducible evaluation"),
+                  ScreenerVerdict(requirement_id="R2", verdict="unknown")],
+    )  # fmt: skip
+
+
+def test_page_text_is_what_a_screener_reads(mini_bank, sel, draft):
+    text = verify.page_text(mini_bank, SPEC, sel, draft)
+    assert text.startswith("Ada Example\n\nML Engineer, Evaluation\n")
+    assert "**" not in text and "\n- " not in text and "# " not in text
+    assert "Example University — Research Collaborator, Speech · Sep 2030 – Present" in text
+
+
+def test_pack_has_bullets_sources_requirements_and_page(mini_bank, sel, draft, tmp_path):
+    pack = verify.write_pack(tmp_path, mini_bank, SPEC, sel, draft).read_text()
+    assert "### EXP-01.b2 · Example University (team work)" in pack
+    assert "- Condition: 97.5% vs 4.0% — Classifiable cases only" in pack
+    assert "- R1 (basic): “build reproducible evaluations”" in pack
+    assert "### Resume text" in pack and '"screener"' in pack
+
+
+def test_an_honest_review_passes_and_grades(mini_bank, sel, draft):
+    text = verify.page_text(mini_bank, SPEC, sel, draft)
+    review = honest_review(draft, sel)
+    assert verify.check_review(review, draft, SPEC, sel, text) == []
+    assert verify.grade(SPEC, review) == ("A", 1.0, 0.0)
+
+
+def test_review_must_cover_every_bullet_and_requirement(mini_bank, sel, draft):
+    review = honest_review(draft, sel)
+    gone = review.bullets.pop()
+    review.bullets[0].entailed = False
+    review.bullets[0].problem = "says 'benchmark' where the claim says 'evaluation'"
+    review.screener.pop()
+    found = verify.check_review(review, draft, SPEC, sel, verify.page_text(mini_bank, SPEC, sel, draft))
+    assert f"{'+'.join(gone.claim_ids)} has no entailment review" in messages(found, "review")
+    assert messages(found, "entailment") == [
+        f"{'+'.join(review.bullets[0].claim_ids)} doesn't follow from its claims: says 'benchmark' where the claim "
+        "says 'evaluation'"
+    ]
+    assert messages(found, "screener") == ["requirements the screener didn't judge: R2"]
+
+
+def test_screener_quotes_are_verbatim_and_supported_asks_loop_back(mini_bank, sel, draft):
+    review = honest_review(draft, sel)
+    review.screener[0] = ScreenerVerdict(requirement_id="R1", verdict="meets", quote="Led evaluation at scale")
+    found = verify.check_review(review, draft, SPEC, sel, verify.page_text(mini_bank, SPEC, sel, draft))
+    assert messages(found, "screener")[0].startswith("R1 meets, but its quote isn't a verbatim run")
+    review.screener[0] = ScreenerVerdict(requirement_id="R1", verdict="unknown")
+    found = verify.check_review(review, draft, SPEC, sel, verify.page_text(mini_bank, SPEC, sel, draft))
+    assert messages(found, "screener") == [
+        "R1 is supported on the page but reads as unknown: rewrite its bullet in the posting's words (tailor write)"
+    ]
+    assert verify.grade(SPEC, review)[0] == "D"

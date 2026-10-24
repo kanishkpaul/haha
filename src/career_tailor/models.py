@@ -383,6 +383,26 @@ class Writing(Model):
     skills: dict[str, list[str]] = Field(default_factory=dict)  # group label -> skills-bank terms
 
 
+class BulletReview(Model):
+    claim_ids: list[str]  # identifies the bullet
+    entailed: bool
+    problem: str = ""  # what the bullet says that its sources don't, when not entailed
+
+
+class ScreenerVerdict(Model):
+    requirement_id: str
+    verdict: Literal["meets", "unknown", "does not meet"]
+    quote: str = ""  # the resume line that shows it, verbatim; required for "meets"
+
+
+class Review(Model):
+    """The entailment review and screener simulation for one draft (review.json)."""
+
+    job: str
+    bullets: list[BulletReview] = Field(default_factory=list)
+    screener: list[ScreenerVerdict] = Field(default_factory=list)
+
+
 class Finding(Model):
     check: str
     severity: Literal["error", "warning"]

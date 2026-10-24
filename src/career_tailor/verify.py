@@ -4,18 +4,28 @@ Deterministic checks first: every number, name, tool and date in a bullet must
 appear in its cited claims, and a metric that keeps its number keeps its
 condition (record section 15). `lint` applies the record's policy (sections
 12.3, 14 and 15: team credit, repository visibility, protocol boundaries) and
-style rules. A per-bullet entailment review follows.
+style rules. `write_pack` asks for an entailment review of each bullet and a
+screener's reading of the page; `check_review` validates `review.json`, sends
+supported requirements that read as Unknown back to writing, and grades the
+page A–D the way a HiredScore-style screen would.
 """
 
+import json
 import re
+from pathlib import Path
 
 from . import numbers
 from . import selection as sel_mod
 from .bank import Bank
+from .jobspec import norm
 from .match import tokens
-from .models import Finding, JobSpec, Selection, TailoredBullet, Writing
+from .models import Finding, JobSpec, Review, Selection, TailoredBullet, Writing
 from .textutil import md_plain
-from .write import entry_link, sources
+from .write import entry_link, render_draft, sources
+
+PACK_FILE = "verify.prompt.md"
+REVIEW_FILE = "review.json"
+REPORT_FILE = "check_report.md"
 
 # A name or tool: has a capital after the first letter (ScreenCaptureKit, CNN/GRU), a digit (Qwen3, Base64),
 # an inner dot (llama.cpp), or a leading capital mid-sentence (Unify, Munich). Hyphenated compounds are
@@ -178,4 +188,146 @@ def lint(w: Writing, bank: Bank, spec: JobSpec, sel: Selection) -> list[Finding]
             missing = long[0] if has_short else short[0]
             add("keywords", "warning", f"the posting's term appears in one form only; add “{missing}” once for "
                                        "screeners that search the other")  # fmt: skip
+    return findings
+
+
+# ---------------------------------------------------------------- review
+
+
+def page_text(bank: Bank, spec: JobSpec, sel: Selection, w: Writing) -> str:
+    """The draft as a screener reads it: plain text, one line per resume line."""
+    lines = []
+    for line in render_draft(bank, spec, sel, w).split("\n"):
+        line = re.sub(r"^(?:#+\s*|-\s+)", "", line.strip())
+        lines.append(md_plain(line))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
+
+
+_PACK = """\
+# Review the draft for {company}: {title}
+
+Write `{review_path}`: JSON matching the schema at the end. Then run `uv run tailor check {folder}`.
+
+## 1. Entailment, bullet by bullet
+
+For each bullet below, `entailed` is true only if everything it says follows from its sources:
+paraphrase and omission are fine; a broader scope, a stronger ownership verb, a number or name that
+isn't there, a dropped qualifier that changes the meaning, or a historical result stated as current
+is not. When false, `problem` says exactly what isn't supported. One review per bullet, identified by
+its `claim_ids`.
+
+{bullets}
+
+## 2. Screener
+
+Now forget the sources. Read only the resume text below, as a recruiter's screen or an Ashby-style
+reviewer would, and judge each requirement: `meets` only if a line on the page shows it (copy that
+line or a run of at least three words from it, verbatim, into `quote`); `unknown` if the page only
+hints at it; `does not meet` if the page shows nothing for it. Be strict: a screener doesn't infer.
+
+{requirements}
+
+### Resume text
+
+```text
+{page}```
+
+## Schema
+
+```json
+{schema}
+```
+"""
+
+
+def write_pack(folder: Path, bank: Bank, spec: JobSpec, sel: Selection, w: Writing) -> Path:
+    blocks = []
+    for b in w.bullets:
+        entry = bank.entries[b.entry_id]
+        claims = [bank.claim(c) for c in b.claim_ids]
+        lines = [
+            f"### {_label(b)} · {entry.name}" + (" (team work)" if entry.team else ""),
+            "",
+            f"Bullet: {b.text}",
+            "",
+        ]
+        lines += [f"- Source `{c.id}`: {sel_mod.display_text(c)}" + (f" ({md_plain(c.details)})" if c.details else "")
+                  for c in claims]  # fmt: skip
+        lines += [f"- Condition: {md_plain(cond)}" for c in claims for cond in c.conditions]
+        if entry.notes.get("Team credit"):
+            lines.append(f"- Team credit: {md_plain(entry.notes['Team credit'])}")
+        blocks.append("\n".join(lines))
+    reqs = [f"- {r.id} ({r.kind}): “{r.quote}”" for r in spec.requirements if r.kind != "knockout"]
+    pack = folder / PACK_FILE
+    pack.write_text(_PACK.format(
+        company=spec.company, title=spec.title, review_path=folder / REVIEW_FILE, folder=folder,
+        bullets="\n\n".join(blocks), requirements="\n".join(reqs), page=page_text(bank, spec, sel, w),
+        schema=json.dumps(Review.model_json_schema(), indent=2),
+    ), encoding="utf-8")  # fmt: skip
+    return pack
+
+
+def grade(spec: JobSpec, review: Review) -> tuple[str, float | None, float | None]:
+    """A–D from the screener's verdicts: the weighted share of basic requirements it marks Meets
+    (A ≥ 90% with none unmet, B ≥ 75%, C ≥ 50%, D below), plus the preferred share for context."""
+    verdicts = {v.requirement_id: v.verdict for v in review.screener}
+
+    def share(kind: str) -> float | None:
+        reqs = [r for r in spec.requirements if r.kind == kind]
+        total = sum(r.weight for r in reqs)
+        return sum(r.weight for r in reqs if verdicts.get(r.id) == "meets") / total if total else None
+
+    basic = share("basic")
+    if basic is None:
+        basic = share("responsibility")
+    unmet = any(verdicts.get(r.id) == "does not meet" for r in spec.requirements if r.kind == "basic")
+    if basic is None:
+        letter = "?"
+    elif basic >= 0.9 and not unmet:
+        letter = "A"
+    elif basic >= 0.75:
+        letter = "B"
+    elif basic >= 0.5:
+        letter = "C"
+    else:
+        letter = "D"
+    return letter, basic, share("preferred")
+
+
+def check_review(review: Review, w: Writing, spec: JobSpec, sel: Selection, text: str) -> list[Finding]:
+    findings: list[Finding] = []
+
+    def add(check: str, severity: str, message: str) -> None:
+        findings.append(Finding(check=check, severity=severity, message=message))
+
+    if review.job != spec.key:
+        add("review", "error", f"review is for {review.job}, draft is for {spec.key}")
+    wanted = {tuple(b.claim_ids) for b in w.bullets}
+    seen = [tuple(r.claim_ids) for r in review.bullets]
+    for key in sorted(wanted - set(seen)):
+        add("review", "error", f"{'+'.join(key)} has no entailment review")
+    for key in sorted(set(seen) - wanted):
+        add("review", "error", f"{'+'.join(key)} is reviewed but isn't a bullet in the draft")
+    for r in review.bullets:
+        if not r.entailed:
+            why = r.problem or "no problem given; say what isn't supported"
+            add("entailment", "error", f"{'+'.join(r.claim_ids)} doesn't follow from its claims: {why}")
+    judged = {r.id for r in spec.requirements if r.kind != "knockout"}
+    ids = [v.requirement_id for v in review.screener]
+    if missing := sorted(judged - set(ids), key=lambda i: (len(i), i)):
+        add("screener", "error", f"requirements the screener didn't judge: {', '.join(missing)}")
+    if extra := sorted(set(ids) - judged, key=lambda i: (len(i), i)):
+        add("screener", "error", f"the screener judged items that aren't requirements: {', '.join(extra)}")
+    page = norm(text)
+    for v in review.screener:
+        if v.verdict == "meets" and (len(v.quote.split()) < 3 or norm(md_plain(v.quote)) not in page):
+            add("screener", "error", f"{v.requirement_id} meets, but its quote isn't a verbatim run of three or "
+                                     f"more words from the page: {v.quote[:70]!r}")  # fmt: skip
+        planned = sel.covered.get(v.requirement_id, "none")
+        if planned == "strong" and v.verdict != "meets":
+            add("screener", "error", f"{v.requirement_id} is supported on the page but reads as {v.verdict}: "
+                                     "rewrite its bullet in the posting's words (tailor write)")  # fmt: skip
+        elif planned == "partial" and v.verdict == "does not meet":
+            add("screener", "warning", f"{v.requirement_id} has partial support on the page, but reads as "
+                                       "does not meet")  # fmt: skip
     return findings
