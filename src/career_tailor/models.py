@@ -302,16 +302,37 @@ class OpportunityMatch(Model):
     deadline: str = ""
 
 
+class Hit(Model):
+    """A claim retrieved for one requirement, before judgement."""
+
+    claim_id: str
+    score: float
+    skills: list[str] = Field(default_factory=list)  # skills-bank terms shared with the requirement
+    track: str = ""  # "lead" or "support" when the claim's entry is on the job's track
+
+
+class Retrieval(Model):
+    key: str
+    tracks: list[str]  # role tracks (record section 12.1), best fit first
+    hits: dict[str, list[Hit]]  # requirement id -> retrieved claims, best first
+
+
 class Support(Model):
     claim_id: str
     strength: Literal["strong", "partial"]
-    quote: str
+    quote: str  # verbatim from the claim
 
 
 class Coverage(Model):
     requirement_id: str
     verdict: Literal["strong", "partial", "none"]
     support: list[Support] = Field(default_factory=list)
+    note: str = ""  # what is missing, for partial and none
+
+
+class Match(Model):
+    key: str
+    coverage: list[Coverage] = Field(default_factory=list)
 
 
 class Pick(Model):

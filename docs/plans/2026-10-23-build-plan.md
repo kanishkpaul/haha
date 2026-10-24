@@ -149,4 +149,9 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (24 Oct 2026):** proof work complete and in the bank (P1.7–P1.8). Record unchanged, so parsing is identical; proof linking, annotations, bank and M2 checks were rerun on the completed files. Proof backing for 220 record claims: 172 collected sources, 17 user-accepted closures, 31 personal account only. Independent claim audit not yet done. Review in `haha-data/PROOF_REVIEW.md`.
 
-M3–M8 phases are added here when each milestone starts.
+| **P3.1** | `match.py` retrieval: BM25 over claim text blended with whole-entry relevance, skills-bank hits, a boost for the job's lead-track entries; tracks ranked by headline and lead-entry fit (a suggestion the judgement confirms); hidden, superseded and knockout items left out | retrieval tests on the fixture; the Anthropic spec ranks the Evals track first |
+| **P3.2** | Judgement prompt pack (`match.prompt.md`): each requirement with its candidates, proof strength, conditions and team credit, plus every eligible claim; Claude writes `match.json` (track, verdict per requirement, supports with verbatim quotes); validation of ids, quotes and verdict consistency | grounding tests reject paraphrased quotes and unknown claims |
+| **P3.3** | `gap_report.md` and `tailor plan` part 1: supported, weakly supported (Unknown risk) and unsupported requirements, weighted coverage for basic and preferred asks, proof strength per requirement, knockouts pointed to `knockouts.md` | CLI test on the fixture |
+| **P3.4** | The five real jobs through `tailor plan` | five validated `match.json` files and gap reports |
+
+M4–M8 phases are added here when each milestone starts.
