@@ -77,3 +77,41 @@ def test_render_produces_a_pdf(mini_bank, sel, draft, tmp_path):
     pdf = render.render_pdf(tmp_path, data, "Ada_Example_Resume.pdf")
     assert pdf.is_file() and pdf.read_bytes()[:4] == b"%PDF"
     assert (tmp_path / render.RENDER_DIR / render.YAML_FILE).is_file()
+
+
+def layout(*lines, pages=1):
+    return render.PdfLayout(pages=pages, width=612, height=792, lines=[render.Line(*x) for x in lines])
+
+
+def test_pdf_text_reads_in_order_and_joins_hyphenated_breaks():
+    lay = layout((0, 700, 690, 36, "• Kept 98.9% of deferential vs less-"), (0, 685, 675, 46, "deferential ones."),
+                 (0, 720, 710, 400, "Aug 2026"), (0, 720, 710, 36, "Jadavpur University"))  # fmt: skip
+    assert lay.text() == "Jadavpur University Aug 2026 Kept 98.9% of deferential vs less-deferential ones."
+
+
+def test_fill_measures_the_last_page():
+    lay = layout((0, 750, 740, 36, "a"), (1, 750, 400, 36, "b"), pages=2)
+    assert lay.fill(0.5) == pytest.approx((792 - 36 - 400) / (792 - 72))
+
+
+def test_extraction_findings():
+    lay = layout((0, 750, 740, 36, "Second line"), (0, 760, 752, 36, "First line"), (0, 730, 720, 36, "of(cid:3)ce"),
+                 pages=2)  # fmt: skip
+    found = [f.message for f in render.extraction_findings(lay, ["First line", "Second line", "Third line"],
+                                                           ["ada@example.com"], 1)]  # fmt: skip
+    assert found == [
+        "the PDF text has ligature or unmapped glyphs: (cid:3)",
+        "missing from the PDF text: 'Third line'",
+        "contact detail not extractable: 'ada@example.com'",
+        "the PDF has 2 pages; the plan allows 1",
+    ]
+    order = render.extraction_findings(layout((0, 760, 750, 36, "B"), (0, 740, 730, 36, "A")), ["A", "B"], [], 1)
+    assert [f.message for f in order] == ["out of reading order in the PDF text: 'B'"]
+
+
+def test_rendered_fixture_extracts_cleanly(mini_bank, sel, draft, tmp_path):
+    data = render.rendercv_input(mini_bank, SPEC, sel, draft, today=FIXTURE_TODAY)
+    lay = render.read_pdf(render.render_pdf(tmp_path, data, "Ada_Example_Resume.pdf"))
+    expected = render.expected_lines(mini_bank, sel, draft)
+    assert render.extraction_findings(lay, expected, ["ada@example.com"], 1) == []
+    assert lay.pages == 1 and 0 < lay.fill(0.5) <= 1

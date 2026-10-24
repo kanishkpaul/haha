@@ -4,6 +4,10 @@
 YAML (one column, standard headings, Letter for US/Canada jobs and A4
 elsewhere, URLs as plain text); `render_pdf` runs RenderCV, which typesets with
 Typst. `Design` holds the typographic knobs the fit loop adjusts.
+
+`read_pdf` reads the result back with pdfminer, as an ATS would, and
+`extraction_findings` checks that every line of the draft survives intact, in
+order, with no ligature or (cid:) garbage.
 """
 
 import re
@@ -15,10 +19,13 @@ from pathlib import Path
 
 import phonenumbers
 import yaml
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LAParams, LTTextContainer, LTTextLine
 
 from . import selection as sel_mod
 from .bank import Bank
-from .models import JobSpec, Selection, Writing
+from .jobspec import norm
+from .models import Finding, JobSpec, Selection, Writing
 from .textutil import md_links, md_plain
 from .write import education_lines, entry_link
 
@@ -237,3 +244,99 @@ def render_pdf(folder: Path, data: dict, name: str) -> Path:
 
 def design_dict(d: Design) -> dict:
     return asdict(d)
+
+
+# ---------------------------------------------------------------- reading the PDF back
+
+
+@dataclass(frozen=True)
+class Line:
+    page: int
+    top: float  # points from the page bottom
+    bottom: float
+    left: float
+    text: str
+
+
+@dataclass(frozen=True)
+class PdfLayout:
+    pages: int
+    width: float
+    height: float
+    lines: list[Line]
+
+    def text(self) -> str:
+        """Text in reading order: pages, then top to bottom, then left to right. A line ending in a hyphen
+        joins the next without a space, so "less-" + "deferential" reads "less-deferential"."""
+        out = ""
+        for line in sorted(self.lines, key=lambda x: (x.page, -round(x.top), x.left)):
+            piece = line.text.removeprefix("•").strip()
+            out += piece if out.endswith("-") else (" " + piece if out else piece)
+        return out
+
+    def fill(self, margin_in: float) -> float:
+        """How much of the last page's text area is used, from 0 to 1."""
+        last = [x for x in self.lines if x.page == self.pages - 1]
+        if not last:
+            return 0.0
+        top = self.height - margin_in * 72
+        return min(1.0, (top - min(x.bottom for x in last)) / (self.height - 2 * margin_in * 72))
+
+
+def read_pdf(pdf: Path) -> PdfLayout:
+    lines, width, height, pages = [], 0.0, 0.0, 0
+    for number, page in enumerate(extract_pages(str(pdf), laparams=LAParams())):
+        pages, width, height = number + 1, page.width, page.height
+        for element in page:
+            if isinstance(element, LTTextContainer):
+                for line in element:
+                    if isinstance(line, LTTextLine) and line.get_text().strip():
+                        lines.append(Line(number, line.y1, line.y0, line.x0, line.get_text().strip()))
+    return PdfLayout(pages=pages, width=width, height=height, lines=lines)
+
+
+_GARBAGE = re.compile(r"\(cid:\d+\)|[\ufb00-\ufb06\ufffd]")
+
+
+def expected_lines(bank: Bank, sel: Selection, w: Writing) -> list[str]:
+    """What must come out of the PDF, in page order: headline, entry names, bullets, skills."""
+    bullets: dict[str, list[str]] = {}
+    for b in w.bullets:
+        bullets.setdefault(b.entry_id, []).append(md_plain(b.text))
+    out = [w.headline]
+    for pick in sel.picks:
+        entry = bank.entries[pick.entry_id]
+        if entry.kind not in sel_mod.ONE_LINE_KINDS:
+            out.append(md_plain(entry.name))
+        out += bullets.get(entry.id, [])
+    out += [f"{group}: {', '.join(terms)}" for group, terms in w.skills.items()]
+    return out
+
+
+def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[str], pages: int) -> list[Finding]:
+    findings: list[Finding] = []
+
+    def add(check: str, message: str, severity: str = "error") -> None:
+        findings.append(Finding(check=check, severity=severity, message=message))
+
+    raw = layout.text()
+    if found := sorted(set(_GARBAGE.findall(raw))):
+        add("extraction", f"the PDF text has ligature or unmapped glyphs: {' '.join(found)}")
+    text = norm(raw)
+    position = 0
+    for line in expected:
+        at = text.find(norm(line), position)
+        if at < 0:
+            anywhere = text.find(norm(line))
+            if anywhere < 0:
+                add("extraction", f"missing from the PDF text: {line[:80]!r}")
+            else:
+                add("extraction", f"out of reading order in the PDF text: {line[:80]!r}")
+            continue
+        position = at + len(norm(line))
+    for item in contact:
+        if norm(item) not in text:
+            add("extraction", f"contact detail not extractable: {item!r}")
+    if layout.pages > pages:
+        add("pages", f"the PDF has {layout.pages} pages; the plan allows {pages}")
+    return findings
