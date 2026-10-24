@@ -170,4 +170,9 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 
 **Status (25 Oct 2026):** M5 done. All five jobs have a `draft.json` and `draft.md` that pass the guard with no errors or warnings: every planned claim cited once, every bullet within its character budget (4–13 characters to spare at the tightest), no number or ownership word beyond the cited claims, skills only from the skills bank. Headlines use the record's track headlines (Evals for four jobs, Agent infrastructure for Prime Intellect) rather than posting titles that would imply post-training experience or a company job title. The guard is a first line; M6 does the full fact check and entailment review.
 
-M6–M8 phases are added here when each milestone starts.
+| **P6.1** | `verify.py` fact checks per bullet against its cited claims: numbers and years, names and tools (proper and technical terms, compounds part by part), and a kept metric keeping its section 15 condition | fact tests: invented tools, names, years and dropped conditions rejected |
+| **P6.2** | Policy and style lint: links only in headings and only to the candidate's public repositories, team work visible and team award lines saying "team", Arnesh disambiguated, no "solved N games", no cited claim that is superseded or hidden, numbers from two claims flagged for a same-protocol check; no first person, hidden characters, numeric dates, mixed quotes or double spaces; both forms of the posting's acronyms | lint tests |
+| **P6.3** | Review pack (`verify.prompt.md`): entailment per bullet against its sources, and a screener reading only the resume text who marks each requirement Meets, Unknown or Does not meet with a verbatim quote; `review.json` validated; supported requirements that read as Unknown go back to writing; an A–D grade from the screener's verdicts | review validation tests |
+| **P6.4** | `tailor check` part 1 writes `check_report.md`; the five real jobs through it | five drafts with no errors and the screener's grade recorded |
+
+M7–M8 phases are added here when each milestone starts.
