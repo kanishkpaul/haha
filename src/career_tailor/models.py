@@ -332,6 +332,7 @@ class Coverage(Model):
 
 class Match(Model):
     key: str
+    track: str  # the role track (record section 12.1) the resume leads with
     coverage: list[Coverage] = Field(default_factory=list)
 
 

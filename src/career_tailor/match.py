@@ -3,19 +3,31 @@
 Retrieval is deterministic: BM25 over claim text plus skills-bank hits, with a
 boost for entries on the job's role track (record section 12.1). Knockouts are
 left to `knockouts.py`.
+
+Judgement is LLM work: `write_pack` lists each requirement with its retrieved
+claims (and every other eligible claim), and Claude writes `match.json`. Each
+support quotes the claim verbatim; `validate` checks the quotes, the claim ids
+and that verdicts agree with their supports.
 """
 
+import json
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
 from .annotate import Tagger
 from .bank import Bank
 from .jobspec import norm
-from .models import Claim, Entry, Hit, JobSpec, Requirement, Retrieval, Track
+from .models import CheckReport, Claim, Entry, Finding, Hit, JobSpec, Match, Requirement, Retrieval, Track
 from .textutil import md_plain
 
+MATCH_FILE = "match.json"
+PACK_FILE = "match.prompt.md"
+HITS_FILE = "match.hits.json"
+
 TOP_K = 8
+MAX_SUPPORT = 4
 PER_ENTRY = 3
 SKILL_BONUS = 0.4
 ENTRY_SHARE = 0.4  # how much the whole entry's relevance counts next to the claim's own
@@ -200,3 +212,179 @@ def retrieve(bank: Bank, spec: JobSpec, top_k: int = TOP_K) -> Retrieval:
                 break
         out[req.id] = picked
     return Retrieval(key=spec.key, tracks=ranked, hits=out)
+
+
+# ---------------------------------------------------------------- judgement
+
+
+def judged(spec: JobSpec) -> list[Requirement]:
+    """The requirements a match must cover: everything but knockouts."""
+    return [r for r in spec.requirements if r.kind != "knockout"]
+
+
+def validate(m: Match, spec: JobSpec, bank: Bank) -> CheckReport:
+    report = CheckReport()
+
+    def add(check: str, severity: str, message: str) -> None:
+        report.findings.append(Finding(check=check, severity=severity, message=message))
+
+    if m.key != spec.key:
+        add("job", "error", f"match is for {m.key}, spec is {spec.key}")
+    if m.track not in {t.target for t in bank.tables.tracks}:
+        add("track", "error", f"unknown track {m.track!r}; use one of the record's section 12.1 targets")
+    wanted = {r.id for r in judged(spec)}
+    knockouts = {r.id for r in spec.requirements} - wanted
+    ids = [c.requirement_id for c in m.coverage]
+    if dupes := sorted({i for i in ids if ids.count(i) > 1}):
+        add("ids", "error", f"requirements judged twice: {', '.join(dupes)}")
+    if missing := sorted(wanted - set(ids), key=_req_order):
+        add("ids", "error", f"requirements not judged: {', '.join(missing)}")
+    for rid in sorted(set(ids) & knockouts, key=_req_order):
+        add("ids", "error", f"{rid} is a knockout; knockouts are judged in knockouts.md, not here")
+    for rid in sorted(set(ids) - wanted - knockouts, key=_req_order):
+        add("ids", "error", f"{rid} is not a requirement in the spec")
+    pool = {c.id: c for _, c in eligible(bank)}
+    for cov in m.coverage:
+        rid = cov.requirement_id
+        strengths = {s.strength for s in cov.support}
+        if cov.verdict == "strong" and "strong" not in strengths:
+            add("verdict", "error", f"{rid} is strong but has no strong support")
+        if cov.verdict == "partial" and (not cov.support or "strong" in strengths):
+            add("verdict", "error", f"{rid} is partial, so it needs supports and none of them strong")
+        if cov.verdict == "none" and cov.support:
+            add("verdict", "error", f"{rid} is none but lists supports")
+        if cov.verdict != "strong" and not cov.note:
+            add("note", "warning", f"{rid} is {cov.verdict}; say in the note what is missing")
+        if len(cov.support) > MAX_SUPPORT:
+            add("support", "warning", f"{rid} lists {len(cov.support)} supports; keep the best {MAX_SUPPORT}")
+        cited = [s.claim_id for s in cov.support]
+        if dupes := sorted({c for c in cited if cited.count(c) > 1}):
+            add("support", "error", f"{rid} cites {', '.join(dupes)} more than once")
+        for sup in cov.support:
+            claim = pool.get(sup.claim_id)
+            if claim is None:
+                why = "is hidden or superseded" if _exists(bank, sup.claim_id) else "does not exist"
+                add("claim", "error", f"{rid} cites {sup.claim_id}, which {why}")
+            elif norm(md_plain(sup.quote)) not in norm(claim_text(claim)):
+                add("quote", "error", f"{rid} quote is not verbatim from {sup.claim_id}: {sup.quote[:80]!r}")
+            elif len(sup.quote.split()) < 3:
+                add("quote", "warning", f"{rid} quote from {sup.claim_id} is very short; quote the words that show it")
+    return report
+
+
+def _req_order(rid: str) -> tuple:
+    return (len(rid), rid)
+
+
+def _exists(bank: Bank, claim_id: str) -> bool:
+    try:
+        bank.claim(claim_id)
+    except (KeyError, StopIteration):
+        return False
+    return True
+
+
+def load_match(folder: Path) -> tuple[Match | None, CheckReport]:
+    path = folder / MATCH_FILE
+    if not path.is_file():
+        missing = Finding(check="match", severity="error", message=f"no {MATCH_FILE} yet; fill it from {PACK_FILE}")
+        return None, CheckReport(findings=[missing])
+    try:
+        return Match.model_validate_json(path.read_text(encoding="utf-8")), CheckReport()
+    except ValueError as err:
+        return None, CheckReport(findings=[Finding(check="schema", severity="error", message=str(err)[:500])])
+
+
+# ---------------------------------------------------------------- prompt pack
+
+
+def _claim_line(bank: Bank, claim: Claim) -> str:
+    entry = bank.entries[claim.entry_id]
+    facts = [f"proof: {claim.proof}"]
+    if entry.team:
+        facts.append("team work")
+    if claim.conditions:
+        facts.append("conditions: " + "; ".join(md_plain(c) for c in claim.conditions))
+    return f"`{claim.id}` {claim_text(claim)} *({'; '.join(facts)})*"
+
+
+def _entry_label(entry: Entry) -> str:
+    dates = f", {entry.dates.display}" if entry.dates and entry.dates.display else ""
+    subtitle = f" — {entry.subtitle}" if entry.subtitle else ""
+    return f"{entry.id} · {entry.name}{subtitle}{dates}"
+
+
+_PACK = """\
+# Match {company}'s requirements to the evidence bank
+
+Write `{match_path}`: JSON matching the schema at the end. Then run `uv run tailor plan {folder}`.
+
+## How to judge
+
+A screener reads the resume requirement by requirement and marks each Meets, Does not meet or
+Unknown. Judge as that screener would, using only the claims below. These verdicts decide what
+the resume says: an unsupported requirement is never written into it.
+
+- `key`: `{key}`.
+- `track`: the role track the resume should lead with, one of: {tracks}.
+  Retrieval suggests **{suggested}**; keep it unless another track fits the job better.
+- One `coverage` item per requirement below, with its `requirement_id`. Knockouts are judged
+  separately (`knockouts.md`) and are not listed here.
+- `support`: up to {max_support} claims, best first. Cite any claim id in this pack, not only the
+  retrieved ones. `quote` is copied character for character from the claim text shown (Markdown
+  removed; at least three words): the words that show the requirement is met.
+  - `strong`: the claim on its own shows the requirement is met; a screener reading it would mark Meets.
+  - `partial`: related or adjacent evidence; it shows part of the ask, a smaller setting, or the
+    skill without the stated context.
+- `verdict`: `strong` if any support is strong, `partial` if all are partial, `none` if nothing fits.
+- `note`: for partial and none, what is missing, in a few words ("no production systems",
+  "statistics not shown"). Optional for strong.
+- Be strict:
+  - Traits ("rigorous", "fast-moving") count only when a claim shows the behaviour.
+    Self-description doesn't count.
+  - Team results support only the part the candidate owned, so read the claim's wording.
+  - A metric counts only with its conditions.
+  - Years or seniority asks need dates that show them.
+  - Prefer claims with stronger proof (collected > accepted > account) when two say the same thing.
+- Don't infer skills the claims don't state. "Built a Python sidecar" shows Python; it does not
+  show production Python at scale.
+
+## Requirements and retrieved claims
+
+{requirements}
+
+## Every eligible claim
+
+{appendix}
+
+## Schema
+
+```json
+{schema}
+```
+"""
+
+
+def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) -> Path:
+    blocks = []
+    for req in judged(spec):
+        lines = [f"### {req.id} · {req.kind} · weight {req.weight} · {req.category}", "", f"> {req.quote}", ""]
+        hits = retrieval.hits.get(req.id, [])
+        lines += [f"- {_claim_line(bank, bank.claim(h.claim_id))}" for h in hits] or ["- (no claims retrieved)"]
+        blocks.append("\n".join(lines))
+    appendix, current = [], None
+    for entry, claim in eligible(bank):
+        if entry.id != current:
+            appendix += ["", f"**{_entry_label(entry)}**" + (" (team work)" if entry.team else "")]
+            current = entry.id
+        appendix.append(f"- {_claim_line(bank, claim)}")
+    targets = [t.target for t in bank.tables.tracks]
+    pack = folder / PACK_FILE
+    pack.write_text(_PACK.format(
+        company=spec.company, match_path=folder / MATCH_FILE, folder=folder, key=spec.key,
+        tracks=", ".join(f"`{t}`" for t in targets), suggested=retrieval.tracks[0] if retrieval.tracks else targets[0],
+        max_support=MAX_SUPPORT, requirements="\n\n".join(blocks), appendix="\n".join(appendix).strip(),
+        schema=json.dumps(Match.model_json_schema(), indent=2),
+    ), encoding="utf-8")  # fmt: skip
+    (folder / HITS_FILE).write_text(retrieval.model_dump_json(indent=2), encoding="utf-8")
+    return pack
