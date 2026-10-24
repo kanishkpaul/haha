@@ -8,6 +8,11 @@ Typst. `Design` holds the typographic knobs the fit loop adjusts.
 `read_pdf` reads the result back with pdfminer, as an ATS would, and
 `extraction_findings` checks that every line of the draft survives intact, in
 order, with no ligature or (cid:) garbage.
+
+`fit` renders until the page is full and not over: it tightens or loosens the
+design within bounds, and when type alone can't make room it re-solves the plan
+on a measured line budget, choosing only among bullets already written and
+checked. The measured lines per page are saved as calibration for later plans.
 """
 
 import re
@@ -25,7 +30,7 @@ from pdfminer.layout import LAParams, LTTextContainer, LTTextLine
 from . import selection as sel_mod
 from .bank import Bank
 from .jobspec import norm
-from .models import Finding, JobSpec, Selection, Writing
+from .models import Finding, JobSpec, Match, PlanEdits, Selection, Writing
 from .textutil import md_links, md_plain
 from .write import education_lines, entry_link
 
@@ -95,6 +100,16 @@ def _valid_phone(number: str) -> bool:
         return phonenumbers.is_valid_number(phonenumbers.parse(number))
     except phonenumbers.NumberParseException:
         return False
+
+
+def contact_details(bank: Bank) -> list[str]:
+    """The email and phone as they should read in the PDF, for the extraction check."""
+    fields = bank.profile.fields
+    out = [md_plain(fields["Primary email"])] if fields.get("Primary email") else []
+    phone = md_plain(fields.get("Phone", ""))
+    if phone and _valid_phone(phone):
+        out.append(phonenumbers.format_number(phonenumbers.parse(phone), phonenumbers.PhoneNumberFormat.INTERNATIONAL))
+    return out
 
 
 def _header(bank: Bank, headline: str) -> dict:
@@ -340,3 +355,90 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
     if layout.pages > pages:
         add("pages", f"the PDF has {layout.pages} pages; the plan allows {pages}")
     return findings
+
+
+# ---------------------------------------------------------------- fit loop
+
+FONT_MIN, FONT_MAX = 9.5, 10.5
+FILL_MIN = 0.7  # the last page should be at least this full
+CALIBRATION_FILE = "calibration.yaml"
+
+
+@dataclass
+class Fit:
+    pdf: Path
+    design: Design
+    selection: Selection
+    writing: Writing
+    layout: PdfLayout
+    steps: list[str]
+    dropped: list[str]  # claim ids the fit loop took off the page
+    measured_lines_per_page: float | None = None  # at the default design, for calibration
+
+
+def _content_pages(layout: PdfLayout, design: Design) -> float:
+    return layout.pages - 1 + layout.fill(design.margin)
+
+
+def _trim(w: Writing, sel: Selection) -> Writing:
+    """The draft limited to bullets whose claims are all still on the page."""
+    picked = {c for p in sel.picks for c in p.claim_ids}
+    return w.model_copy(update={"bullets": [b for b in w.bullets if set(b.claim_ids) <= picked]})
+
+
+def fit(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, w: Writing, edits: PlanEdits,
+        today: date | None = None, max_renders: int = 12) -> Fit:  # fmt: skip
+    design, steps, dropped, measured = Design(), [], [], None
+    written = {c for b in w.bullets for c in b.claim_ids}
+    name = pdf_name(bank)
+    direction = 0  # the way the design last moved, so it never swings back and forth
+    for _ in range(max_renders):
+        pdf = render_pdf(folder, rendercv_input(bank, spec, sel, w, design, today), name)
+        layout = read_pdf(pdf)
+        used = _content_pages(layout, design)
+        if design == Design() and measured is None:
+            measured = sel.lines_used / used if used else None
+        if layout.pages > sel.pages:
+            if design.font_size > FONT_MIN:
+                design, direction = design.step(-1), -1
+                steps.append(f"{layout.pages} pages: tightened to {design.font_size:g} pt")
+                continue
+            # The solver counts estimated lines; this many of them fill one real page at this design.
+            lines_per_page = sel.lines_used / used * 0.98
+            before = {c for p in sel.picks for c in p.claim_ids}
+            sel = sel_mod.solve(bank, spec, m, edits, lines_per_page=lines_per_page, only=written & before)
+            gone = sorted(before - {c for p in sel.picks for c in p.claim_ids})
+            if not gone:
+                steps.append(f"{layout.pages} pages at the tightest design and nothing left to drop")
+                break
+            dropped += gone
+            w = _trim(w, sel)
+            steps.append(f"{layout.pages} pages at {design.font_size:g} pt: re-planned at {lines_per_page:.1f} lines "
+                         f"per page, dropping {', '.join(gone)}")  # fmt: skip
+            continue
+        fill = layout.fill(design.margin)
+        if layout.pages == sel.pages and fill < FILL_MIN and design.font_size < FONT_MAX and direction >= 0:
+            design, direction = design.step(+1), +1
+            steps.append(f"last page {fill:.0%} full: loosened to {design.font_size:g} pt")
+            continue
+        if direction > 0 and layout.pages > sel.pages:
+            continue
+        steps.append(f"fits: {layout.pages} page(s), last page {fill:.0%} full, {design.font_size:g} pt")
+        break
+    return Fit(pdf, design, sel, w, layout, steps, dropped, measured)
+
+
+def load_calibration(path: Path) -> dict[str, float]:
+    return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
+
+
+def save_calibration(path: Path, paper: str, lines_per_page: float) -> dict[str, float]:
+    """A running mean of measured lines per page for each paper size."""
+    data = load_calibration(path)
+    runs = data.get(f"{paper}_runs", 0)
+    old = data.get(paper, lines_per_page)
+    data[paper] = round((old * runs + lines_per_page) / (runs + 1), 2)
+    data[f"{paper}_runs"] = runs + 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
+    return data

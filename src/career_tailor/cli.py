@@ -6,7 +6,20 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection, verify, write
+from . import (
+    annotate,
+    bank,
+    ingest,
+    jobspec,
+    knockouts,
+    match,
+    opportunities,
+    paths,
+    render,
+    selection,
+    verify,
+    write,
+)
 from .models import Posting, Review, Selection, Writing
 
 COMMANDS = {
@@ -141,7 +154,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
     )
     try:
         edits = selection.load_edits(folder)
-        sel = selection.solve(b, spec, m, edits)
+        calibration = render.load_calibration(p.data / render.CALIBRATION_FILE)
+        sel = selection.solve(b, spec, m, edits, lines_per_page=calibration.get(selection.paper_for(spec)))
     except (ValidationError, selection.SelectionError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
@@ -224,6 +238,30 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"error: {write.WRITING_FILE}: {str(err)[:500]}", file=sys.stderr)
         return 1
     checks = write.guard(w, b, spec, m, sel).findings + verify.facts(w, b, sel) + verify.lint(w, b, spec, sel)
+    if any(f.severity == "error" for f in checks):
+        (folder / verify.REPORT_FILE).write_text(verify.render_report(spec, w, checks, None, []), encoding="utf-8")
+        for f in checks:
+            print(f"{f.severity}: [{f.check}] {f.message}")
+        print("check: fix the draft before it is rendered")
+        return 1
+    try:
+        fitted = render.fit(folder, b, spec, m, sel, w, selection.load_edits(folder))
+    except (RuntimeError, selection.SelectionError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    if fitted.measured_lines_per_page:
+        render.save_calibration(p.data / render.CALIBRATION_FILE, sel.paper, fitted.measured_lines_per_page)
+    if fitted.dropped:  # the fitted page is now the plan and the draft
+        sel, w = fitted.selection, fitted.writing
+        sel_path.write_text(sel.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        draft_path.write_text(w.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        (folder / selection.PLAN_FILE).write_text(selection.render_plan(b, spec, m, sel), encoding="utf-8")
+        (folder / write.DRAFT_FILE).write_text(write.render_draft(b, spec, sel, w), encoding="utf-8")
+        print(f"fit: took {', '.join(fitted.dropped)} off the page to fit; plan and draft updated")
+    final = folder / fitted.pdf.name
+    final.write_bytes(fitted.pdf.read_bytes())
+    expected = render.expected_lines(b, sel, w)
+    checks += render.extraction_findings(fitted.layout, expected, render.contact_details(b), sel.pages)
     pack = verify.write_pack(folder, b, spec, sel, w)
     review, review_findings = None, []
     review_path = folder / verify.REVIEW_FILE
@@ -236,8 +274,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         if review_path.stat().st_mtime < draft_path.stat().st_mtime:
             print("warning: the draft changed after the review; review it again", file=sys.stderr)
         review_findings = verify.check_review(review, w, spec, sel, verify.page_text(b, spec, sel, w))
+    fit_lines = [*fitted.steps, f"PDF: {final.name}"]
     report = folder / verify.REPORT_FILE
-    report.write_text(verify.render_report(spec, w, checks, review, review_findings), encoding="utf-8")
+    report.write_text(verify.render_report(spec, w, checks, review, review_findings, fit_lines), encoding="utf-8")
     findings = checks + review_findings
     for f in findings:
         print(f"{f.severity}: [{f.check}] {f.message}")

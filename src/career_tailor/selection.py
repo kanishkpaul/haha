@@ -16,7 +16,7 @@ pins and bans go in `plan.edits.yaml` and are applied on every run.
 import math
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 from pathlib import Path
 
@@ -160,6 +160,7 @@ def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
 
 KIND_FACTOR = {"basic": 3, "responsibility": 2, "preferred": 1}
 PROOF_VALUE = {"collected": 12, "accepted": 8, "account": 3, "none": 3}
+KIND_VALUE = {"experience": 60}  # screeners read research and industry experience first (record section 12)
 # An award line earns its place with a placement or a selection, not an interview or an invitation.
 _PLACED = re.compile(
     r"\b(?:top[- ]|\d+(?:st|nd|rd|th)\b|winner|won\b|runner-up|selected|first place|accepted into)", re.I
@@ -172,7 +173,7 @@ class Rules:
     """Section limits for a page count, following the record's assembly guidance (section 12)."""
 
     projects: tuple[int, int]  # research + engineering entries
-    awards: int  # one-line award and selection entries
+    awards: tuple[int, int]  # one-line award and selection entries
     leadership: int
     bullets: dict[str, int]  # max bullets per entry by kind ("catalog" for catalog entries)
 
@@ -180,9 +181,9 @@ class Rules:
     def for_pages(cls, pages: int) -> "Rules":
         if pages == 1:
             bullets = {"experience": 4, "research": 3, "engineering": 3, "leadership": 2, "catalog": 2}
-            return cls(projects=(2, 4), awards=3, leadership=1, bullets=bullets)
+            return cls(projects=(2, 4), awards=(2, 3), leadership=1, bullets=bullets)
         bullets = {"experience": 5, "research": 4, "engineering": 4, "leadership": 3, "catalog": 3}
-        return cls(projects=(2, 4 + 3 * (pages - 1)), awards=3 + 3 * (pages - 1), leadership=2, bullets=bullets)
+        return cls(projects=(2, 4 + 3 * (pages - 1)), awards=(2, 3 + 3 * (pages - 1)), leadership=2, bullets=bullets)
 
 
 class SelectionError(ValueError):
@@ -210,11 +211,23 @@ def fixed_lines(layout: Layout, pages: int, bank: Bank) -> float:
     return layout.header + layout.section + education + layout.section + layout.skills
 
 
-def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, time_limit: float = 20.0) -> Selection:
+def solve(
+    bank: Bank,
+    spec: JobSpec,
+    m: Match,
+    edits: PlanEdits | None = None,
+    time_limit: float = 20.0,
+    lines_per_page: float | None = None,
+    only: set[str] | None = None,
+) -> Selection:
+    """Pick the page. `lines_per_page` replaces the layout's estimate with a measured one (the fit loop and
+    saved calibration); `only` limits the choice to these claim ids (the bullets already written)."""
     edits = edits or PlanEdits()
     pages = edits.pages or spec.pages
     paper = paper_for(spec)
     layout = LAYOUTS[paper]
+    if lines_per_page:
+        layout = replace(layout, lines_per_page=lines_per_page)
     rules = Rules.for_pages(pages)
     pool = [(e, c) for e, c in eligible(bank) if e.kind != "education"]
     claims = {c.id: c for _, c in pool}
@@ -242,7 +255,8 @@ def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, t
         kind = "catalog" if is_catalog(entry) else entry.kind
         model.add(chosen <= rules.bullets[kind] * x[eid])
         if kind in ("experience", "research", "engineering"):
-            model.add(chosen >= min(2, len(cids)) * x[eid])
+            available = [c for c in cids if only is None or c in only]
+            model.add(chosen >= min(2, len(available)) * x[eid])
         cost.append(int(SCALE * layout.entry) * x[eid])
     sections: dict[str, list[str]] = defaultdict(list)
     for eid, entry in entries.items():
@@ -262,7 +276,10 @@ def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, t
         model.add(count({"experience"}) >= 1)
     model.add(count({"research", "engineering"}) >= rules.projects[0])
     model.add(count({"research", "engineering"}) <= rules.projects[1])
-    model.add(count(ONE_LINE_KINDS) <= rules.awards)
+    award_lines = count(ONE_LINE_KINDS)
+    model.add(award_lines <= rules.awards[1])
+    if sum(1 for e in entries.values() if e.kind in ONE_LINE_KINDS) >= rules.awards[0]:
+        model.add(award_lines >= rules.awards[0])
     model.add(count({"leadership"}) <= rules.leadership)
     for a, b, _ in exclusions(bank):
         for ca in a:
@@ -273,6 +290,9 @@ def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, t
         model.add((y if ref in claims else x)[ref] == 1)
     for ref in edits.ban:
         model.add((y if ref in claims else x)[ref] == 0)
+    if only is not None:
+        for cid in claims.keys() - only:
+            model.add(y[cid] == 0)
 
     reqs = {r.id: r for r in spec.requirements}
     value = []
@@ -307,7 +327,7 @@ def solve(bank: Bank, spec: JobSpec, m: Match, edits: PlanEdits | None = None, t
     for eid, entry in entries.items():
         fit = 25 if eid in lead else 12 if eid in support else 0
         recency = _recency(entry) // (2 if entry.kind in ONE_LINE_KINDS else 1)
-        value.append((fit + recency) * x[eid])
+        value.append((fit + recency + KIND_VALUE.get(entry.kind, 0)) * x[eid])
     model.maximize(sum(value))
 
     solver = cp_model.CpSolver()

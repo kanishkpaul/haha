@@ -115,3 +115,41 @@ def test_rendered_fixture_extracts_cleanly(mini_bank, sel, draft, tmp_path):
     expected = render.expected_lines(mini_bank, sel, draft)
     assert render.extraction_findings(lay, expected, ["ada@example.com"], 1) == []
     assert lay.pages == 1 and 0 < lay.fill(0.5) <= 1
+
+
+def test_fit_loosens_an_underfilled_page(mini_bank, sel, draft, tmp_path):
+    fitted = render.fit(tmp_path, mini_bank, SPEC, MATCH, sel, draft, selection.PlanEdits(), today=FIXTURE_TODAY)
+    assert fitted.layout.pages == 1 and not fitted.dropped
+    assert fitted.design.font_size > render.Design().font_size or fitted.layout.fill(fitted.design.margin) >= 0.7
+    assert fitted.steps[-1].startswith("fits: 1 page(s)") and fitted.measured_lines_per_page
+
+
+def test_fit_tightens_then_drops_written_bullets_on_overflow(mini_bank, sel, draft, tmp_path):
+    long = draft.model_copy(deep=True)
+    for b in long.bullets:
+        b.text = (b.text.rstrip(".") + "; ") * 4 + "done."
+    fitted = render.fit(tmp_path, mini_bank, SPEC, MATCH, sel, long, selection.PlanEdits(), today=FIXTURE_TODAY)
+    assert fitted.layout.pages == 1
+    assert any("tightened" in s for s in fitted.steps) and fitted.design.font_size == render.FONT_MIN
+    assert fitted.dropped and any("re-planned" in s for s in fitted.steps)
+    kept = {c for p in fitted.selection.picks for c in p.claim_ids}
+    assert {c for b in fitted.writing.bullets for c in b.claim_ids} == kept
+    assert not kept & set(fitted.dropped)
+
+
+def test_calibration_is_a_running_mean(tmp_path):
+    path = tmp_path / render.CALIBRATION_FILE
+    render.save_calibration(path, "letter", 46.0)
+    data = render.save_calibration(path, "letter", 48.0)
+    assert data == {"letter": 47.0, "letter_runs": 2}
+    assert render.load_calibration(path)["letter"] == 47.0
+    assert render.load_calibration(tmp_path / "none.yaml") == {}
+
+
+def test_solve_honours_measured_lines_and_written_claims(mini_bank, sel):
+    fewer = selection.solve(mini_bank, SPEC, MATCH, lines_per_page=36)
+    assert fewer.lines_budget == 36 and fewer.lines_used <= 36
+    only = {"EXP-01.b1", "ENG-01.b1", "RES-01.l1", "RES-02.l1"}
+    limited = selection.solve(mini_bank, SPEC, MATCH, only=only | {c for p in sel.picks for c in p.claim_ids
+                                                                 if p.section == "Awards and selections"})  # fmt: skip
+    assert {c for p in limited.picks if p.section != "Awards and selections" for c in p.claim_ids} <= only

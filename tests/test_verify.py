@@ -1,6 +1,6 @@
 import pytest
 
-from career_tailor import bank, cli, ingest, jobspec, match, paths, selection, verify, write
+from career_tailor import bank, cli, ingest, jobspec, match, paths, render, selection, verify, write
 from career_tailor.models import (
     BulletReview,
     Coverage,
@@ -247,9 +247,10 @@ POSTING = Posting(key=SPEC.key, ats="lever", org="acme", company="Acme", title=S
                   text="- build reproducible evaluations\n- experience building browser agents\n")  # fmt: skip
 
 
-def test_cli_check_reports_then_grades(data_dir, capsys, draft, sel):
+def test_cli_check_renders_then_grades(data_dir, capsys, draft, sel):
     p = paths.load()
-    bank.save(bank.compile_bank(p), p.bank)
+    built = bank.compile_bank(p)
+    bank.save(built, p.bank)
     folder = ingest.save_posting(p.applications, POSTING, {})
     (folder / jobspec.SPEC_FILE).write_text(SPEC.model_dump_json())
     with pytest.raises(SystemExit) as done:
@@ -261,13 +262,26 @@ def test_cli_check_reports_then_grades(data_dir, capsys, draft, sel):
     with pytest.raises(SystemExit) as done:
         cli.main(["check", folder.name])
     out = capsys.readouterr().out
-    assert done.value.code == 1  # the fixture's record wording drops a condition
-    assert "error: [conditions] ENG-01.b2: keeps 20/20 per named gate" in out and "next: fill" in out
+    assert done.value.code == 1  # the fixture's record wording drops a condition, so nothing is rendered
+    assert "error: [conditions] ENG-01.b2: keeps 20/20 per named gate" in out
+    assert "check: fix the draft before it is rendered" in out and not list(folder.glob("*.pdf"))
+
+    for entry in built.entries.values():  # without conditions the record wording is a clean draft
+        for claim in entry.claims:
+            claim.conditions = []
+    bank.save(built, p.bank)
+    with pytest.raises(SystemExit) as done:
+        cli.main(["check", folder.name])
+    out = capsys.readouterr().out
+    assert done.value.code == 0 and "next: fill" in out, out
+    assert (folder / "Ada_Example_Resume.pdf").read_bytes()[:4] == b"%PDF"
     report = (folder / verify.REPORT_FILE).read_text()
     assert (
         report.startswith("# Check report: ML Engineer, Evaluation at Acme") and "**Waiting for the review.**" in report
     )
+    assert "## Render" in report and "- fits: 1 page(s)" in report and "- PDF: Ada_Example_Resume.pdf" in report
     assert (folder / verify.PACK_FILE).is_file()
+    assert (p.data / render.CALIBRATION_FILE).is_file()
 
     (folder / verify.REVIEW_FILE).write_text(honest_review(draft, sel).model_dump_json())
     with pytest.raises(SystemExit):

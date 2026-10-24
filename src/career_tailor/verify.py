@@ -337,7 +337,7 @@ def check_review(review: Review, w: Writing, spec: JobSpec, sel: Selection, text
 
 
 def render_report(spec: JobSpec, w: Writing, checks: list[Finding], review: Review | None,
-                  review_findings: list[Finding]) -> str:  # fmt: skip
+                  review_findings: list[Finding], fit: list[str] | None = None) -> str:  # fmt: skip
     findings = checks + review_findings
     ok = not any(f.severity == "error" for f in findings)
     lines = [f"# Check report: {spec.title} at {spec.company}", ""]
@@ -361,7 +361,9 @@ def render_report(spec: JobSpec, w: Writing, checks: list[Finding], review: Revi
             lines.append("- No findings.")
         lines.append("")
 
-    section("Facts, policy and style", checks)
+    if fit:
+        lines += ["## Render", "", *[f"- {step}" for step in fit], ""]
+    section("Facts, policy, style and extraction", checks)
     if review is not None:
         entailed = sum(r.entailed for r in review.bullets)
         lines += [f"{entailed} of {len(w.bullets)} bullets follow from their claims.", ""]
