@@ -154,4 +154,6 @@ Each milestone is split into phases. A phase is committed and pushed once its te
 | **P3.3** | `gap_report.md` and `tailor plan` part 1: supported, weakly supported (Unknown risk) and unsupported requirements, weighted coverage for basic and preferred asks, proof strength per requirement, knockouts pointed to `knockouts.md` | CLI test on the fixture |
 | **P3.4** | The five real jobs through `tailor plan` | five validated `match.json` files and gap reports |
 
+**Status (24 Oct 2026):** M3 done. All five jobs have validated `match.json` files (every support quotes its claim verbatim) and gap reports. Basic coverage: METR 100%, Prime Intellect 100%, Apollo 89%, Cohere 76%, Anthropic 75%. Unsupported asks: LLM post-training (Anthropic, Apollo) and distributed LLM training (Cohere, two asks). Retrieval's track suggestion was overridden on three of five jobs, so M4 reads the confirmed track from `match.json`.
+
 M4–M8 phases are added here when each milestone starts.

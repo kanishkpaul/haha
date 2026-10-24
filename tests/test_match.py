@@ -191,6 +191,17 @@ def test_gap_report_sorts_requirements_into_tiers(mini_bank):
     assert "Weighted coverage (strong counts fully, partial half): basic 50%." in text
     assert "- R4: “In-person in London”" in text
     assert "Track: **ML evaluation**." in text
+    assert "- EXP-01 · Example University — Research Collaborator, Speech" in text and ": 1 (R1)" in text
+
+
+def test_evidence_used_counts_requirements_not_citations(mini_bank):
+    m = good_match()
+    m.coverage[0].support.append(
+        Support(claim_id="EXP-01.b2", strength="partial", quote="Model A kept 97.5% of tone markers")
+    )
+    text = match.gap_report(spec(R_EVAL, R_AGENT), m, mini_bank)
+    line = next(x for x in text.splitlines() if x.startswith("- EXP-01 "))
+    assert line.endswith(": 1 (R1)")
 
 
 def test_gap_report_flags_account_only_proof(mini_bank):

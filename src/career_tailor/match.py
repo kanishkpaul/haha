@@ -508,14 +508,15 @@ def gap_report(spec: JobSpec, m: Match, bank: Bank, retrieval: Retrieval | None 
         lines += ["## Knockouts", "", "Judged against your candidate facts in `knockouts.md`:", ""]
         lines += [f"- {r.id}: “{_cell(r.quote)}”" for r in knockouts]
         lines.append("")
-    used = Counter(bank.claim(s.claim_id).entry_id for c in covs for s in c.support)
-    if used:
+    supported: dict[str, list[str]] = {}
+    for c in covs:
+        for entry_id in dict.fromkeys(bank.claim(s.claim_id).entry_id for s in c.support):
+            supported.setdefault(entry_id, []).append(c.requirement_id)
+    if supported:
         lines += ["## Evidence used most", "", "Entries by the number of requirements they support:", ""]
-        for entry_id, n in used.most_common():
-            entry = bank.entries[entry_id]
-            reqs_for = sorted({c.requirement_id for c in covs for s in c.support
-                               if bank.claim(s.claim_id).entry_id == entry_id}, key=_req_order)  # fmt: skip
-            lines.append(f"- {_entry_label(entry)}: {n} ({', '.join(reqs_for)})")
+        for entry_id, rids in sorted(supported.items(), key=lambda kv: -len(kv[1])):
+            rids = sorted(rids, key=_req_order)
+            lines.append(f"- {_entry_label(bank.entries[entry_id])}: {len(rids)} ({', '.join(rids)})")
         lines.append("")
     return "\n".join(lines)
 
