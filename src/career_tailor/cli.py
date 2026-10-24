@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection
-from .models import Posting
+from . import annotate, bank, ingest, jobspec, knockouts, match, opportunities, paths, selection, write
+from .models import Posting, Selection, Writing
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
@@ -156,6 +156,52 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_write(args: argparse.Namespace) -> int:
+    p = paths.load()
+    folder = resolve_application(p, args.folder)
+    if folder is None:
+        print(f"error: no single application folder matches {args.folder!r} in {p.applications}", file=sys.stderr)
+        return 1
+    spec_report, spec = jobspec.check_folder(folder)
+    m, match_report = match.load_match(folder)
+    sel_path = folder / selection.SELECTION_FILE
+    if not spec_report.ok or spec is None or m is None or not sel_path.is_file():
+        print(f"error: no approved plan yet; run `tailor plan {folder.name}` first", file=sys.stderr)
+        return 1
+    if (folder / match.MATCH_FILE).stat().st_mtime > sel_path.stat().st_mtime or (
+        (folder / selection.EDITS_FILE).is_file()
+        and (folder / selection.EDITS_FILE).stat().st_mtime > sel_path.stat().st_mtime
+    ):
+        print(f"warning: match.json or plan edits changed after the plan; rerun `tailor plan {folder.name}`",
+              file=sys.stderr)  # fmt: skip
+    b = bank.load(p.bank)
+    if reason := bank.stale_reason(b, p):
+        print(f"warning: {reason}", file=sys.stderr)
+    sel = Selection.model_validate_json(sel_path.read_text(encoding="utf-8"))
+    record_text = p.career_record.read_text(encoding="utf-8") if p.career_record.is_file() else ""
+    pack = write.write_pack(folder, b, spec, m, sel, record_text)
+    draft_path = folder / write.WRITING_FILE
+    if not draft_path.is_file():
+        print(f"write: {sum(len(pk.claim_ids) for pk in sel.picks)} claims to write")
+        print(f"next: fill {draft_path} from {pack.name}, then `tailor write {folder.name}`")
+        return 0
+    try:
+        w = Writing.model_validate_json(draft_path.read_text(encoding="utf-8"))
+    except ValidationError as err:
+        print(f"error: {write.WRITING_FILE}: {str(err)[:500]}", file=sys.stderr)
+        return 1
+    report = write.guard(w, b, spec, m, sel)
+    (folder / write.CHECK_FILE).write_text(write.render_check(report), encoding="utf-8")
+    for f in report.findings:
+        print(f"{f.severity}: [{f.check}] {f.message}")
+    if not report.ok:
+        return 1
+    (folder / write.DRAFT_FILE).write_text(write.render_draft(b, spec, sel, w), encoding="utf-8")
+    warnings = sum(f.severity == "warning" for f in report.findings)
+    print(f"draft: {len(w.bullets)} bullets, {warnings} warnings -> {folder / write.DRAFT_FILE}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailor", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -174,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
                 "--check", metavar="FOLDER", help="validate an application's jobspec.json against its posting"
             )
             cmd.add_argument("--company", help="company name to use instead of the board's")
-        if name == "plan":
+        if name in ("plan", "write"):
             cmd.add_argument("folder", help="application folder (path, name, or unique name prefix)")
     args = parser.parse_args(argv)
     if args.command == "bank":
@@ -183,6 +229,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(cmd_job(args))
     if args.command == "plan":
         raise SystemExit(cmd_plan(args))
+    if args.command == "write":
+        raise SystemExit(cmd_write(args))
     raise SystemExit(f"tailor {args.command}: not implemented yet")
 
 

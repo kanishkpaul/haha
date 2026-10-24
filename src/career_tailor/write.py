@@ -8,7 +8,10 @@ Code and saved as `draft.json`. `render_draft` puts both together as `draft.md`.
 
 `write_pack` prepares the writing prompt: each bullet's source claim, its
 conditions and team credit, the requirements it supports, a character budget
-from the plan, and voice samples from the record's earlier resumes.
+from the plan, and voice samples from the record's earlier resumes. `guard`
+checks the result before anything is rendered: citations, budgets, numbers,
+ownership words, banned phrases, drift from the sources, headline and skills.
+The full fact check against the bank is the next stage's job.
 """
 
 import json
@@ -16,16 +19,20 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from . import numbers
 from . import selection as sel_mod
 from .annotate import _variants
 from .bank import Bank
 from .match import entry_label, tokens
-from .models import Entry, JobSpec, Match, Selection, TailoredBullet, Writing
+from .models import CheckReport, Claim, Entry, Finding, JobSpec, Match, Selection, TailoredBullet, Writing
 from .textutil import md_links, md_plain
 
 WRITING_FILE = "draft.json"
 DRAFT_FILE = "draft.md"
 PACK_FILE = "write.prompt.md"
+CHECK_FILE = "write.check.md"
+DRIFT = 0.6  # share of a bullet's content words that should come from its sources or the posting
+MAX_SKILLS = 18
 
 # Filler a screener reads past, and claims of quality the bullet should show instead.
 BANNED = [
@@ -286,3 +293,114 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
         schema=json.dumps(Writing.model_json_schema(), indent=2),
     ), encoding="utf-8")  # fmt: skip
     return pack
+
+
+# ---------------------------------------------------------------- guard
+
+# Words that claim more ownership than a source may give. Normalised so "owning" and "owned" match.
+_OWNERSHIP = {"led": "lead", "lead": "lead", "leading": "lead", "leads": "lead", "sole": "sole", "solely": "sole",
+              "solo": "solo", "single-handedly": "solo", "independently": "independent", "independent": "independent",
+              "founded": "found", "founder": "found", "founding": "found", "owned": "own", "owning": "own",
+              "owns": "own", "headed": "head", "managed": "manage", "directed": "direct",
+              "architected": "architect"}  # fmt: skip
+
+
+def _ownership(text: str) -> set[str]:
+    words = re.findall(r"[a-z]+(?:-[a-z]+)*", text.lower())
+    return {_OWNERSHIP[w] for w in words if w in _OWNERSHIP}
+
+
+def sources(bank: Bank, entry: Entry, claims: list[Claim]) -> str:
+    """Everything a bullet may draw facts from: its claims with their labels, details and conditions,
+    plus the entry's heading, dates and team-credit note."""
+    parts = [entry.name, entry.subtitle, entry.dates.raw if entry.dates else "", entry.notes.get("Team credit", "")]
+    for c in claims:
+        parts += [c.label, c.text, c.details, *c.conditions]
+    return md_plain(" ".join(x for x in parts if x))
+
+
+def guard(w: Writing, bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> CheckReport:
+    report = CheckReport()
+
+    def add(check: str, severity: str, message: str, bullet: str = "") -> None:
+        report.findings.append(Finding(check=check, severity=severity, message=message, bullet=bullet[:80]))
+
+    layout = sel_mod.LAYOUTS[sel.paper]
+    if w.job != spec.key:
+        add("job", "error", f"draft is for {w.job}, spec is {spec.key}")
+    headlines = {spec.title, bank.profile.headline} | {t.headline for t in bank.tables.tracks}
+    if w.headline not in headlines:
+        add("headline", "error", f"headline {w.headline!r} is neither the posting title nor a record headline")
+    picks = {p.entry_id: p for p in sel.picks}
+    all_picked = [c for p in sel.picks for c in p.claim_ids]
+    if w.summary:
+        if sel.lines_budget - sel.lines_used < 2:
+            add("summary", "error", "the plan leaves no room for a summary; leave it empty")
+        if len(w.summary) > 2 * layout.chars_per_line:
+            add("summary", "error", f"summary is {len(w.summary)} characters; at most {2 * layout.chars_per_line}")
+        known = numbers.tokens(" ".join(sources(bank, bank.entries[c.split(".")[0]], [bank.claim(c)])
+                                        for c in all_picked), years=True)  # fmt: skip
+        if extra := numbers.tokens(w.summary, years=True) - known:
+            add("numbers", "error", f"summary has numbers no picked claim states: {', '.join(sorted(extra))}")
+    keywords = set(tokens(" ".join([spec.title, *spec.keywords, *(x for v in spec.keywords.values() for x in v)])))
+    cited: Counter = Counter()
+    for b in w.bullets:
+        text = md_plain(b.text)
+        pick = picks.get(b.entry_id)
+        if pick is None:
+            add("cite", "error", f"{b.entry_id} is not in the plan", text)
+            continue
+        if not b.claim_ids or not set(b.claim_ids) <= set(pick.claim_ids):
+            add("cite", "error", f"{b.entry_id} bullet must cite claims the plan picked for it: {pick.claim_ids}", text)
+            continue
+        cited.update(b.claim_ids)
+        entry = bank.entries[b.entry_id]
+        claims = [bank.claim(c) for c in b.claim_ids]
+        budget = sum(pick.lines[c] for c in b.claim_ids) * layout.chars_per_line
+        if len(text) > budget:
+            add("length", "error", f"{'+'.join(b.claim_ids)} is {len(text)} characters; the budget is {budget}", text)
+        source = sources(bank, entry, claims)
+        if extra := numbers.tokens(text, years=True) - numbers.tokens(source, years=True):
+            add("numbers", "error", f"{'+'.join(b.claim_ids)} states {', '.join(sorted(extra))}, "
+                                    "which its claims don't", text)  # fmt: skip
+        if upgraded := _ownership(text) - _ownership(source):
+            add("ownership", "error", f"{'+'.join(b.claim_ids)} claims {', '.join(sorted(upgraded))} ownership "
+                                      "that its claims don't state", text)  # fmt: skip
+        lowered = text.lower()
+        for phrase in BANNED:
+            if re.search(rf"(?<![\w-]){re.escape(phrase)}(?![\w-])", lowered):
+                add("voice", "error", f"{'+'.join(b.claim_ids)} uses the banned phrase {phrase!r}", text)
+        words = [t for t in tokens(text) if t not in keywords]
+        if words:
+            known_words = set(tokens(source))
+            share = sum(t in known_words for t in words) / len(words)
+            if share < DRIFT:
+                add("drift", "warning", f"{'+'.join(b.claim_ids)}: only {share:.0%} of its words come from its "
+                                        "sources; check it says nothing new", text)  # fmt: skip
+        if entry.kind not in sel_mod.ONE_LINE_KINDS and not text.endswith("."):
+            add("style", "warning", f"{'+'.join(b.claim_ids)} should end with a full stop", text)
+    for cid in all_picked:
+        if cited[cid] == 0:
+            add("cite", "error", f"{cid} is in the plan but no bullet cites it")
+        elif cited[cid] > 1:
+            add("cite", "error", f"{cid} is cited by {cited[cid]} bullets; cite each claim once")
+    terms = [t for group in w.skills.values() for t in group]
+    for term in terms:
+        if not known_skill(bank, term):
+            add("skills", "error", f"{term!r} is not in the record's skills bank")
+    if len(terms) > MAX_SKILLS:
+        add("skills", "warning", f"{len(terms)} skills listed; keep at most {MAX_SKILLS}")
+    if len(w.skills) > 4:
+        add("skills", "warning", f"{len(w.skills)} skill groups; keep three or four")
+    return report
+
+
+def render_check(report: CheckReport) -> str:
+    lines = ["# Draft check", ""]
+    lines.append("**OK**" if report.ok else "**Fix the errors below, then rerun `tailor write`.**")
+    lines.append("")
+    for f in report.findings:
+        lines.append(f"- {f.severity}: [{f.check}] {f.message}" + (f" — “{f.bullet}”" if f.bullet else ""))
+    if not report.findings:
+        lines.append("- No findings.")
+    return "\n".join(lines) + "\n"
