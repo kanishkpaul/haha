@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 
 import pytest
 
@@ -110,6 +111,9 @@ def test_staleness(data_dir, tmp_path, monkeypatch, mini_record):
     future = time.time() + 5
     os.utime(note, (future, future))
     assert "annotations changed" in bank.stale_reason(b, p)
+    edited_same_second = datetime.fromisoformat(b.manifest.built_at).timestamp() - 0.001
+    os.utime(note, (edited_same_second, edited_same_second))  # saved just before the build read it
+    assert bank.stale_reason(b, p) is None
     note.unlink()
     record.write_text(record.read_text() + "\nedited\n")
     assert "career record changed" in bank.stale_reason(b, p)

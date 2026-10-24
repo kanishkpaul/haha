@@ -161,7 +161,7 @@ def compile_bank(p: Paths) -> Bank:
     manifest = BankManifest(
         record_path=str(p.career_record),
         record_sha256=record_sha,
-        built_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        built_at=datetime.now(UTC).isoformat(timespec="microseconds"),  # finer than file mtimes
         entry_count=len(entries),
         claim_count=sum(len(e.claims) for e in entries),
         proof_linked=any(c.evidence_ids for e in entries for c in e.claims),
