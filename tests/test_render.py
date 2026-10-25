@@ -145,11 +145,13 @@ def test_fit_tightens_then_drops_written_bullets_on_overflow(mini_bank, sel, dra
     assert not kept & set(fitted.dropped)
 
 
-def test_calibration_is_a_running_mean(tmp_path):
+def test_calibration_is_a_mean_over_jobs(tmp_path):
     path = tmp_path / render.CALIBRATION_FILE
-    render.save_calibration(path, "letter", 46.0)
-    data = render.save_calibration(path, "letter", 48.0)
-    assert data == {"letter": 47.0, "letter_runs": 2}
+    render.save_calibration(path, "letter", 46.0, "job:a")
+    render.save_calibration(path, "letter", 50.0, "job:b")
+    data = render.save_calibration(path, "letter", 48.0, "job:b")  # a re-check replaces the job's measurement
+    assert (data["letter"], data["letter_runs"]) == (47.0, 2)
+    assert data["measured"] == {"letter": {"job:a": 46.0, "job:b": 48.0}}
     assert render.load_calibration(path)["letter"] == 47.0
     assert render.load_calibration(tmp_path / "none.yaml") == {}
 

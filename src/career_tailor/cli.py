@@ -32,6 +32,7 @@ COMMANDS = {
     "plan": "Gap report and selection plan for a job",
     "write": "Write the tailored resume for an approved plan",
     "check": "Verify, render, parse-check and score an application",
+    "run": "Run every stage for a posting, stopping at prompt packs and the two gates",
 }
 
 
@@ -99,21 +100,29 @@ def cmd_job(args: argparse.Namespace) -> int:
     if not args.source:
         print("error: give a posting URL or file, or --check FOLDER", file=sys.stderr)
         return 2
-    source = Path(args.source).expanduser()
+    folder = ingest_posting(p, args.source, args.company)
+    if folder is None:
+        return 1
+    print(f"next: fill {folder / jobspec.SPEC_FILE} from {jobspec.PACK_FILE}, then `tailor job --check {folder.name}`")
+    return 0
+
+
+def ingest_posting(p: paths.Paths, given: str, company: str | None) -> Path | None:
+    """Fetch or read a posting into its application folder and write the job-spec prompt pack."""
+    source = Path(given).expanduser()
     try:
-        posting, raw = ingest.from_file(source) if source.is_file() else ingest.from_url(args.source)
+        posting, raw = ingest.from_file(source) if source.is_file() else ingest.from_url(given)
     except (ValueError, LookupError, OSError) as err:
         print(f"error: {err}", file=sys.stderr)
-        return 1
-    if args.company:
-        posting.company = args.company
-    elif (match := opportunities.find(p.outputs, [posting.url, args.source])) and match.organization:
+        return None
+    if company:
+        posting.company = company
+    elif (match := opportunities.find(p.outputs, [posting.url, given])) and match.organization:
         posting.company = match.organization  # boards give slugs like "apolloresearch"
     folder = ingest.save_posting(p.applications, posting, raw)
-    pack = jobspec.write_pack(folder)
+    jobspec.write_pack(folder)
     print(f"job: {posting.title} at {posting.company} ({posting.ats}) -> {folder}")
-    print(f"next: fill {folder / jobspec.SPEC_FILE} from {pack.name}, then `tailor job --check {folder.name}`")
-    return 0
+    return folder
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -253,7 +262,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"error: {err}", file=sys.stderr)
         return 1
     if fitted.measured_lines_per_page:
-        render.save_calibration(p.data / render.CALIBRATION_FILE, sel.paper, fitted.measured_lines_per_page)
+        render.save_calibration(p.data / render.CALIBRATION_FILE, sel.paper, fitted.measured_lines_per_page, spec.key)
     if fitted.dropped:  # the fitted page is now the plan and the draft
         sel, w = fitted.selection, fitted.writing
         sel_path.write_text(sel.model_dump_json(indent=2) + "\n", encoding="utf-8")
@@ -323,7 +332,88 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def _folder_for_url(p: paths.Paths, url: str) -> Path | None:
+    """The application folder already holding this posting, so a rerun resumes rather than refetches."""
+    for path in sorted(p.applications.glob("*/posting.json")):
+        posting = Posting.model_validate_json(path.read_text(encoding="utf-8"))
+        if url in (posting.url, posting.api_url):
+            return path.parent
+    return None
+
+
+def _plan_stale(folder: Path) -> bool:
+    """True if there is no plan or its inputs changed after it. A current plan is shown at the gate as it is:
+    re-planning on a later calibration would reshuffle a page the draft was written for."""
+    plan = folder / selection.SELECTION_FILE
+    inputs = [folder / n for n in assemble.GATES["plan"] if (folder / n).is_file()]
+    return not plan.is_file() or any(x.stat().st_mtime > plan.stat().st_mtime for x in inputs)
+
+
+def _gate(folder: Path, gate: str, what: str) -> None:
+    stale = gate in assemble.approvals(folder)
+    print(f"gate {'1 (plan)' if gate == 'plan' else '2 (final)'}: review {what} in {folder}"
+          + (" (changed since it was approved)" if stale else ""))  # fmt: skip
+    print(f"approve with `tailor run {folder.name} --approve`")
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    p = paths.load()
+    source = Path(args.source).expanduser()
+    folder = resolve_application(p, args.source) if not source.is_file() else None
+    if folder is None and "://" in args.source:
+        folder = _folder_for_url(p, args.source)
+    if folder is None:
+        if not source.is_file() and "://" not in args.source:
+            print(f"error: {args.source!r} is neither a posting URL, a file, nor one application folder",
+                  file=sys.stderr)  # fmt: skip
+            return 1
+        folder = ingest_posting(p, args.source, args.company)
+        if folder is None:
+            return 1
+    name = argparse.Namespace(folder=str(folder))
+    if not (folder / jobspec.SPEC_FILE).is_file():
+        jobspec.write_pack(folder)
+        print(f"next: fill {folder / jobspec.SPEC_FILE} from {jobspec.PACK_FILE}, then `tailor run {folder.name}`")
+        return 0
+    if rc := cmd_job(argparse.Namespace(source=None, check=str(folder), company=None)):
+        return rc
+    approve = args.approve
+    if not assemble.approved(folder, "plan"):
+        if _plan_stale(folder):
+            if rc := cmd_plan(name):
+                return rc
+            if not (folder / match.MATCH_FILE).is_file():
+                return 0  # cmd_plan said which pack to fill
+        if not approve:
+            _gate(folder, "plan", f"{selection.PLAN_FILE} and {match.GAP_FILE}")
+            print(f"to change the plan, edit {selection.EDITS_FILE} (pin, ban, pages) and rerun")
+            return 0
+        assemble.approve(folder, "plan")
+        approve = False  # one gate per approval
+        print("plan approved")
+    if rc := cmd_write(name):
+        return rc
+    if not (folder / write.WRITING_FILE).is_file():
+        return 0
+    if (rc := cmd_check(name)) or not (folder / verify.REVIEW_FILE).is_file():
+        return rc
+    if not assemble.approved(folder, "final"):
+        if not approve:
+            _gate(folder, "final", f"{verify.REPORT_FILE} and the PDF")
+            return 0
+        assemble.approve(folder, "final")
+        print("final check approved")
+    when = assemble.approvals(folder)
+    pdf = next(folder.glob("*.pdf"), None)
+    print(f"ready: {pdf or folder} (plan approved {when['plan']['at']}, final approved {when['final']['at']})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
+    raise SystemExit(main_run(argv))
+
+
+def main_run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tailor", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     for name, help_text in COMMANDS.items():
@@ -343,18 +433,17 @@ def main(argv: list[str] | None = None) -> None:
             cmd.add_argument("--company", help="company name to use instead of the board's")
         if name in ("plan", "write", "check"):
             cmd.add_argument("folder", help="application folder (path, name, or unique name prefix)")
+        if name == "run":
+            cmd.add_argument("source", help="posting URL or file, or an application folder (path, name or prefix)")
+            cmd.add_argument("--approve", action="store_true", help="approve the gate the run stops at")
+            cmd.add_argument("--company", help="company name to use instead of the board's")
     args = parser.parse_args(argv)
-    if args.command == "bank":
-        raise SystemExit(cmd_bank(args))
-    if args.command == "job":
-        raise SystemExit(cmd_job(args))
-    if args.command == "plan":
-        raise SystemExit(cmd_plan(args))
-    if args.command == "write":
-        raise SystemExit(cmd_write(args))
-    if args.command == "check":
-        raise SystemExit(cmd_check(args))
-    raise SystemExit(f"tailor {args.command}: not implemented yet")
+    handlers = {"bank": cmd_bank, "job": cmd_job, "plan": cmd_plan, "write": cmd_write, "check": cmd_check,
+                "run": cmd_run}  # fmt: skip
+    if args.command not in handlers:
+        print(f"tailor {args.command}: not implemented yet", file=sys.stderr)
+        return 1
+    return handlers[args.command](args)
 
 
 if __name__ == "__main__":

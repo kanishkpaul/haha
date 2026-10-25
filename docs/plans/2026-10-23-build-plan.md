@@ -192,4 +192,6 @@ Decision change (25 Oct 2026): Resume-Matcher's `swiss-single` export only rende
 | **P8.3** | `tailor run <url|folder>`: runs every stage it can and stops where Claude must fill a prompt pack or at a gate. Gate 1 is the plan (`plan.md`, `gap_report.md`); gate 2 is the final check (`check_report.md`, PDF). `--approve` records the pending gate in `approvals.json`, tied to the hashes of what was approved, so a changed plan or page needs approval again | run tests on the fixture: stops at each pack and gate, resumes after approval, approval invalidated by a change |
 | **P8.4** | The five real jobs through `tailor run` to the final gate | zero verify failures, zero Unknowns on supported basic requirements, clean RM parse check |
 
+Change (25 Oct 2026, P8.3): calibration is now a mean over jobs, one measurement each; it had been a running mean over every check, so re-checking one page weighted it towards that page. `tailor run` re-plans only when a plan's inputs are newer than the plan, so a later calibration doesn't reshuffle a page that already has a draft.
+
 Decision change (25 Oct 2026): `add_job` is not used. `score_resume` accepts the job keywords and the resume data inline, so scoring writes nothing to RM's database; storing jobs there is left for the web-UI tracker ("Later").

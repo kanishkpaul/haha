@@ -450,13 +450,14 @@ def load_calibration(path: Path) -> dict[str, float]:
     return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
 
 
-def save_calibration(path: Path, paper: str, lines_per_page: float) -> dict[str, float]:
-    """A running mean of measured lines per page for each paper size."""
+def save_calibration(path: Path, paper: str, lines_per_page: float, job: str) -> dict[str, float]:
+    """The mean of measured lines per page for each paper size, one measurement per job, so checking the same
+    page again replaces its measurement instead of weighting the mean towards it."""
     data = load_calibration(path)
-    runs = data.get(f"{paper}_runs", 0)
-    old = data.get(paper, lines_per_page)
-    data[paper] = round((old * runs + lines_per_page) / (runs + 1), 2)
-    data[f"{paper}_runs"] = runs + 1
+    measured = data.setdefault("measured", {}).setdefault(paper, {})
+    measured[job] = round(lines_per_page, 2)
+    data[paper] = round(sum(measured.values()) / len(measured), 2)
+    data[f"{paper}_runs"] = len(measured)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
     return data

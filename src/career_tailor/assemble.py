@@ -5,8 +5,15 @@ their line ranges in the career record (or the record update that supersedes
 them) and the proof cards and artifacts behind each claim. `check` confirms the
 trace is complete: every bullet has claims, every claim is on the page's plan,
 and every line range sits inside the record the bank was built from.
+
+`tailor run` stops at two gates, the plan and the final check. An approval is
+stored in `approvals.json` with a hash of the files it covers, so a changed
+plan or page needs approving again.
 """
 
+import hashlib
+import json
+from datetime import datetime
 from pathlib import Path
 
 from . import selection as sel_mod
@@ -16,6 +23,12 @@ from .textutil import md_plain
 from .write import education_lines
 
 PROVENANCE_FILE = "provenance.json"
+APPROVALS_FILE = "approvals.json"
+GATES = {
+    # the plan's inputs, not selection.json: the fit loop may trim the selection, and the final gate covers that
+    "plan": ("jobspec.json", "match.json", "plan.edits.yaml"),
+    "final": ("selection.json", "draft.json", "review.json", "check_report.md"),
+}
 
 
 def claim_trace(bank: Bank, claim_id: str) -> ClaimTrace:
@@ -92,3 +105,32 @@ def check(prov: Provenance, sel: Selection, record: Path | None = None) -> list[
                 error(f"{c.claim_id} record lines {span.line_start}–{span.line_end} fall outside the record "
                       f"({total} lines)", line)  # fmt: skip
     return findings
+
+
+def gate_hash(folder: Path, gate: str) -> str:
+    digest = hashlib.sha256()
+    for name in GATES[gate]:
+        path = folder / name
+        digest.update(name.encode() + b"\0" + (path.read_bytes() if path.is_file() else b"<missing>") + b"\0")
+    return digest.hexdigest()
+
+
+def approvals(folder: Path) -> dict[str, dict]:
+    path = folder / APPROVALS_FILE
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def approved(folder: Path, gate: str) -> bool:
+    """True if the gate was approved and none of the files it covers has changed since."""
+    record = approvals(folder).get(gate)
+    return bool(record) and record.get("hash") == gate_hash(folder, gate)
+
+
+def approve(folder: Path, gate: str, now: datetime | None = None) -> dict:
+    record = {"hash": gate_hash(folder, gate), "at": (now or datetime.now().astimezone()).isoformat(timespec="seconds"),
+              "files": [n for n in GATES[gate] if (folder / n).is_file()]}  # fmt: skip
+    data = approvals(folder) | {gate: record}
+    if gate == "plan":
+        data.pop("final", None)  # a new plan means a new page
+    (folder / APPROVALS_FILE).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return record
