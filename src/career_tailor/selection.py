@@ -8,9 +8,11 @@ estimates until the renderer (M7) measures real lines.
 
 `solve` picks entries and claims with CP-SAT: a boolean per entry and per claim,
 the page budget and section rules as constraints, and an objective led by
-weighted requirement coverage from `match.json`, then proof, metrics, recency
-and fit to the job's track. `render_plan` explains the result in `plan.md`; your
-pins and bans go in `plan.edits.yaml` and are applied on every run.
+weighted requirement coverage from `match.json`, then metrics, recency and fit
+to the job's track. Proof strength plays no part: every record entry is true,
+and a claim whose artifact was lost is worth as much as one with a link.
+`render_plan` explains the result in `plan.md`; your pins and bans go in
+`plan.edits.yaml` and are applied on every run.
 """
 
 import math
@@ -159,7 +161,7 @@ def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
 # ---------------------------------------------------------------- solver
 
 KIND_FACTOR = {"basic": 3, "responsibility": 2, "preferred": 1}
-PROOF_VALUE = {"collected": 12, "accepted": 8, "account": 3, "none": 3}
+CLAIM_VALUE = 3  # every pickable claim is worth something, so spare lines get used
 KIND_VALUE = {"experience": 60}  # screeners read research and industry experience first (record section 12)
 CATALOG_VALUE = -60  # catalog entries collect small or early projects; a named project says more
 # An award line earns its place with a placement or a selection, not an interview or an invitation.
@@ -303,8 +305,8 @@ def solve(
             model.add(y[cid] == 0)
 
     # Two stages. First what the page covers: requirements (weighted), experience shown, award lines that
-    # are placements, named projects over catalog rows. Then, holding that, how good the evidence is: proof,
-    # numbers, recency, fit to the job's track. Track fit and proof only choose among equally covering pages.
+    # are placements, named projects over catalog rows. Then, holding that, what reads best: numbers, lead
+    # claims, recency, fit to the job's track. These only choose among equally covering pages.
     reqs = {r.id: r for r in spec.requirements}
     page, evidence = [], []
     for cov in m.coverage:
@@ -329,7 +331,7 @@ def solve(
     lead = set(track.lead_entries) if track else set()
     support = set(track.support_entries) if track else set()
     for cid, c in claims.items():
-        quality = PROOF_VALUE[c.proof] + (6 if c.metrics else 0) + (4 if c.kind == "lead" else 0)
+        quality = CLAIM_VALUE + (6 if c.metrics else 0) + (4 if c.kind == "lead" else 0)
         quality += 15 if cid in lead else 8 if cid in support else 0
         if ".n" in cid:  # promoted from the entry's notes: supporting detail, not a headline bullet
             quality -= 8

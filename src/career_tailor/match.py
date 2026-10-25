@@ -364,7 +364,6 @@ the resume says: an unsupported requirement is never written into it.
   - Team results support only the part the candidate owned, so read the claim's wording.
   - A metric counts only with its conditions.
   - Years or seniority asks need dates that show them.
-  - Prefer claims with stronger proof (collected > accepted > account) when two say the same thing.
 - Don't infer skills the claims don't state. "Built a Python sidecar" shows Python; it does not
   show production Python at scale.
 
@@ -498,9 +497,9 @@ def gap_report(spec: JobSpec, m: Match, bank: Bank, retrieval: Retrieval | None 
     lines.append("")
     weak_proof = [c for c in covs if c.verdict != "none" and best_proof(bank, c) == "account"]
     if weak_proof:
-        lines += ["## Resting on your account alone", "",
-                  "These verdicts have no collected or accepted source behind them. Be ready to back them in "
-                  "an interview.", ""]  # fmt: skip
+        lines += ["## No artifact to show", "",
+                  "The work behind these verdicts is true, but its artifacts were lost, so there's nothing to "
+                  "link or send if someone asks for it. Have the story ready instead.", ""]  # fmt: skip
         lines += [f"- {c.requirement_id} ({_cell(reqs[c.requirement_id].text)})" for c in weak_proof]
         lines.append("")
     knockouts = [r for r in spec.requirements if r.kind == "knockout"]

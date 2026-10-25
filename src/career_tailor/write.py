@@ -203,6 +203,13 @@ The plan (`plan.md`) already chose what goes on the page. Your job is the wordin
 - **The posting's words where they are true.** If the claim is an evaluation, call it one; if the posting
   says "benchmark" and the claim built one, say "benchmark". Don't stretch a word to cover something the
   claim doesn't show. Keywords: {keywords}.
+- **Exact posting terms.** An ATS search matches the posting's words literally, so a synonym on the page
+  doesn't count. Wherever a claim below describes the work a term names, use the term in the posting's
+  form ("evaluations", not "evals", if that is what the posting says). Required terms first; a term no
+  claim describes stays off the page.
+  - Required: {required}
+  - Preferred: {preferred}
+  - Other: {other}
 - **Character budget** per bullet is a hard limit: the plan's line budget at this page's measure.
 - **Banned:** {banned}.
 - **Public disclosure:** generic capture-stack wording, no confidential game names or assets, no
@@ -243,6 +250,18 @@ Their facts may be outdated or superseded: never copy a fact from here.
 """
 
 
+REQUIRED_KINDS = ("basic", "knockout")
+
+
+def posting_terms(spec: JobSpec) -> dict[str, list[str]]:
+    """The posting's keywords in its own form: those on required asks, those on preferred asks, the rest."""
+    required = list(dict.fromkeys(k for r in spec.requirements if r.kind in REQUIRED_KINDS for k in r.keywords))
+    preferred = list(dict.fromkeys(k for r in spec.requirements if r.kind == "preferred" for k in r.keywords
+                                   if k not in required))  # fmt: skip
+    other = [k for k in spec.keywords if k not in required and k not in preferred]
+    return {"required": required, "preferred": preferred, "other": other}
+
+
 def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, record_text: str) -> Path:
     layout = sel_mod.LAYOUTS[sel.paper]
     reqs = {r.id: r for r in spec.requirements}
@@ -264,7 +283,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
             claim = bank.claim(cid)
             kind = "award line" if entry.kind in sel_mod.ONE_LINE_KINDS else "bullet"
             budget = char_budget(pick.lines[cid], layout)
-            lines.append(f"- `{cid}` · {kind}, at most {budget} characters · proof {claim.proof}")
+            lines.append(f"- `{cid}` · {kind}, at most {budget} characters")
             lines.append(f"  - Source: {sel_mod.display_text(claim)}")
             if claim.details:
                 lines.append(
@@ -289,6 +308,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
     pack = folder / PACK_FILE
     pack.write_text(_PACK.format(
         company=spec.company, title=spec.title, draft_path=folder / WRITING_FILE, folder=folder,
+        **{k: ", ".join(v) or "none" for k, v in posting_terms(spec).items()},
         keywords=keywords, banned=", ".join(f"“{b}”" for b in BANNED), headlines="; ".join(f"“{h}”" for h in headlines),
         summary_rule=summary_rule, skills=skills or "- (none)", entries="\n\n".join(blocks), seeds=seeds,
         schema=json.dumps(Writing.model_json_schema(), indent=2),

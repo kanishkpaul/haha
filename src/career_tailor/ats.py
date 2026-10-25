@@ -16,7 +16,7 @@ from .bank import Bank
 from .models import Finding, JobSpec, Selection, Writing
 from .paths import RM_CLI
 from .textutil import md_links, md_plain
-from .write import education_lines
+from .write import REQUIRED_KINDS, education_lines, posting_terms
 
 
 class RMError(RuntimeError):
@@ -50,24 +50,17 @@ def parse_check(path: Path) -> tuple[dict, list[Finding]]:
 
 
 SCORE_FILE = "ats_score.json"
-REQUIRED_KINDS = ("basic", "knockout")
-
-
-def _unique(terms) -> list[str]:
-    return list(dict.fromkeys(t for t in terms if t))
 
 
 def job_keywords(spec: JobSpec) -> dict:
     """RM's job keywords from the spec. RM scores the required, preferred and other terms literally."""
-    required = _unique(k for r in spec.requirements if r.kind in REQUIRED_KINDS for k in r.keywords)
-    preferred = _unique(k for r in spec.requirements if r.kind == "preferred" for k in r.keywords if k not in required)
-    other = [k for k in spec.keywords if k not in required and k not in preferred]
+    terms = posting_terms(spec)
     return {
         "company": spec.company,
         "role": spec.title,
-        "required_skills": required,
-        "preferred_skills": preferred,
-        "keywords": other,
+        "required_skills": terms["required"],
+        "preferred_skills": terms["preferred"],
+        "keywords": terms["other"],
         "experience_requirements": [r.text for r in spec.requirements
                                     if r.kind in REQUIRED_KINDS and r.category == "experience"],
         "education_requirements": [r.text for r in spec.requirements if r.category == "education"],

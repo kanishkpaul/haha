@@ -104,12 +104,13 @@ def test_pack_lists_each_claim_with_budget_conditions_and_requirements(mini_bank
     budget = (
         selection.LAYOUTS["a4"].chars_per_line * next(p for p in sel.picks if p.entry_id == "EXP-01").lines["EXP-01.b1"]
     )
-    assert f"- `EXP-01.b1` · bullet, at most {budget} characters · proof none" in pack
+    assert f"- `EXP-01.b1` · bullet, at most {budget} characters" in pack and "proof none" not in pack
     assert "  - Supports R1 (basic): “build reproducible evaluations”" in pack
     if "EXP-01.b2" in {c for p in sel.picks for c in p.claim_ids}:
         assert "  - Condition to keep with its metric: 97.5% vs 4.0% — Classifiable cases only" in pack
     assert "Sep 2030 – Present · ongoing" in pack
     assert "Keywords: evaluation (evals), browser agents." in pack
+    assert "  - Required: none\n  - Preferred: none\n  - Other: evaluation, browser agents" in pack
     assert "“spearheaded”" in pack and "`ML Engineer, Evaluation`" in pack
     assert "- Built a reproducible evaluation harness for browser agents" in pack
     assert '"headline"' in pack
@@ -256,3 +257,11 @@ def test_cli_write_pack_then_draft(data_dir, capsys):
     assert "draft: " in capsys.readouterr().out
     assert (folder / write.DRAFT_FILE).read_text().startswith("# Ada Example")
     assert "**OK**" in (folder / write.CHECK_FILE).read_text()
+
+
+def test_posting_terms_split_by_requirement_kind():
+    spec = SPEC.model_copy(update={"requirements": [
+        R1.model_copy(update={"keywords": ["evaluation"]}),
+        R2.model_copy(update={"kind": "preferred", "keywords": ["evaluation", "browser agents"]}),
+    ]})  # fmt: skip
+    assert write.posting_terms(spec) == {"required": ["evaluation"], "preferred": ["browser agents"], "other": []}

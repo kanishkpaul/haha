@@ -204,10 +204,10 @@ def test_evidence_used_counts_requirements_not_citations(mini_bank):
     assert line.endswith(": 1 (R1)")
 
 
-def test_gap_report_flags_account_only_proof(mini_bank):
+def test_gap_report_lists_verdicts_without_an_artifact(mini_bank):
     mini_bank.claim("EXP-01.b1").proof = "account"
     text = match.gap_report(spec(R_EVAL, R_AGENT), good_match(), mini_bank)
-    assert "## Resting on your account alone" in text and "- R1 (Reproducible evaluation)" in text
+    assert "## No artifact to show" in text and "- R1 (Reproducible evaluation)" in text
 
 
 POSTING_TEXT = """## Requirements
