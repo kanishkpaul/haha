@@ -470,7 +470,7 @@ def render_plan(bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> str:
         for cid in pick.claim_ids:
             claim = bank.claim(cid)
             covers = ", ".join(sorted(set(supports.get(cid, [])), key=lambda r: (len(r), r)))
-            facts = [f"{pick.lines[cid]} line" + ("s" if pick.lines[cid] > 1 else ""), f"proof {claim.proof}"]
+            facts = [f"{pick.lines[cid]} line" + ("s" if pick.lines[cid] > 1 else "")]
             if covers:
                 facts.append(covers)
             prefix = f"{entry.name}: " if one_line else ""

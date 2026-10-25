@@ -149,7 +149,7 @@ The career record is read from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md`
 ## 📜 House rules
 
 1. **Never invent anything.** Not a skill, metric, date, title or employer. If it isn't in the career record, it doesn't exist. Sorry, "10x engineer".
-2. **Lost receipts aren't lies.** Everything in the record is true. A project whose repo died in 2024 counts the same as one with a link; it just gets a "have the story ready" note.
+2. **Lost receipts aren't lies.** Everything in the record is true. A project whose repo died in 2024 counts the same as one with a link; it just gets a "have the story ready" note. How much proof a claim has is tracked, but it never weights anything, and `tests/test_truth_rule.py` fails the build if it ever does.
 3. **Team wins stay team wins.** Amazon and Blindfold were team efforts; we name who did which part.
 4. **Numbers keep their conditions.** "2.23% on 25 public games, explore-then-replay" is a real result. "Solved 13 games" is fan fiction.
 5. **Strongest reasonable version, always.** Modesty is great at dinner parties and terrible at the resume screen.

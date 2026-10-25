@@ -76,7 +76,7 @@ pages: 1                   # override the page count
 - The PDF reads back in order with no ligature garbage, the contact details extract, and it fits the page count.
 - Every requirement the plan supports strongly reads as Meets to a strict screener.
 
-Proof strength never decides what goes on the page. Every record entry is true; a claim whose artifact was lost counts the same as one with a link. The gap report lists those under "No artifact to show" so you can prepare the story.
+Proof strength never decides what goes on the page. Every record entry is true; a claim whose artifact was lost counts the same as one with a link. Proof stays known (proof cards, provenance) but never reaches the match, write or verify prompts, the plan or the solver. The gap report lists those claims under "No artifact to show" so you can prepare the story. `tests/test_truth_rule.py` enforces this.
 
 ## Page fit
 

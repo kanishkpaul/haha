@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from .models import Annotation, Claim, DateRange, Entry, ProofCard, SkillArea, SourceRef
+from .models import TRUTH_RULE, Annotation, Claim, DateRange, Entry, ProofCard, SkillArea, SourceRef
 from .textutil import md_plain
 
 # Single words that are not skills on their own once a slash phrase is expanded.
@@ -162,9 +162,10 @@ _ORDER = ["collected", "accepted", "account", "none"]
 
 
 def apply_proof_overrides(entries: list[Entry], annotations: list[Annotation]) -> list[str]:
-    """Lower a claim's proof strength where its card's evidence doesn't reach that specific claim.
+    """Mark a claim "account" where its card's collected sources don't include that specific detail.
 
-    Runs after proof linking. Overrides can only weaken: an upgrade is refused and reported."""
+    Runs after proof linking. Bookkeeping for the gap report's "No artifact to show" list, never a value
+    judgement. A mark can't claim more artifacts than the cards hold: that is refused and reported."""
     claims = {c.id: c for e in entries for c in e.claims}
     problems = []
     for a in annotations:
@@ -200,11 +201,11 @@ Rules (from the career record, sections 11, 12.3 and 15):
   For independent work, use the record's recommended heading; never invent an employer or title.
 - `dates_display`: only if the parsed display is wrong or missing, in the form "Aug 2026 – Present".
 - `hide_claims`: claim ids that must never appear on a resume (confidential, superseded, or a
-  plan rather than a result). Leave out claims that are merely weak.
+  plan rather than a result). Never hide a claim because its proof is thin, missing or a personal account.
 - `tracks`: role-track targets this entry should lead or support, from the tracks list below.
-- `claim_proof`: per-claim proof strength where a proof card's evidence summary says that specific
-  claim (a number, placement, duration, sole ownership) isn't supported by the collected sources:
-  set it to "account". Never raise a claim above what its cards show.
+- `claim_proof`: bookkeeping only. Set a claim to "account" where its card's collected sources don't
+  include that specific detail (a number, placement, duration, sole ownership), so the gap report can
+  say there is no artifact to show for it. It never changes the claim's value or wording.
 - `extra_claims`: sentences copied word for word from this entry's notes or fields that state a
   result or contribution, for entries whose content sits only in notes. Never paraphrase.
 - `archive_claims`: sentences copied word for word from the original megadoc (record section 17) that
@@ -219,9 +220,12 @@ Rules (from the career record, sections 11, 12.3 and 15):
 
 ## Proof cards
 
-What the evidence folder says backs this entry: the contribution statement, what the collected
-sources establish, and their limits. Team credit and guidance must agree with it; where the proof
-narrows a claim, say so in `note` or hide the claim.
+What the evidence folder holds for this entry. Use it for who did what (a named team lead, a
+teammate's module) in `team_note`, and for `claim_proof`. It never decides a claim's value: don't hide,
+hedge or soften a claim because of it, and keep proof commentary ("rests on your account", "not in the
+recovered sources") out of `note` and `team_note`.
+
+{truth_rule}
 
 {proof}
 
@@ -281,12 +285,13 @@ def write_packs(entries: list[Entry], areas: list[SkillArea], tracks: list[str],
             continue
         target = annotations_dir / f"{entry.id}.yaml"
         existing = target.read_text(encoding="utf-8").strip() if target.is_file() else "# none yet"
-        dumped = yaml.safe_dump(entry.model_dump(mode="json", exclude_defaults=True, exclude={"claims": {"__all__": {
-            "evidence_ids", "source", "metrics"}}}), sort_keys=False, allow_unicode=True, width=10_000)  # fmt: skip
+        hidden = {"evidence_ids", "proof", "source", "metrics"}  # proof stays out: it never weighs a claim
+        dumped = yaml.safe_dump(entry.model_dump(mode="json", exclude_defaults=True, exclude={"claims": {
+            "__all__": hidden}}), sort_keys=False, allow_unicode=True, width=10_000)  # fmt: skip
         pack = out_dir / f"{entry.id}.md"
         pack.write_text(_INSTRUCTIONS.format(entry_id=entry.id, target=target, entry_yaml=dumped.strip(),
                                              existing=existing, skills=skills, tracks=track_list, schema=schema,
-                                             proof=_proof_text(entry, cards or {})),
+                                             proof=_proof_text(entry, cards or {}), truth_rule=TRUTH_RULE),
                         encoding="utf-8")  # fmt: skip
         written.append(pack)
     return written

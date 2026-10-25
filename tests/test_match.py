@@ -247,7 +247,7 @@ def test_cli_plan_writes_pack_then_gap_report(data_dir, capsys):
     assert (folder / match.GAP_FILE).read_text().startswith("# Gap report: ML Engineer, Evaluation at Acme")
     plan = (folder / selection.PLAN_FILE).read_text()
     assert plan.startswith("# Plan: ML Engineer, Evaluation at Acme")
-    assert "- `EXP-01.b1` (2 lines; proof none; R1) Built a reproducible evaluation" in plan
+    assert "- `EXP-01.b1` (2 lines; R1) Built a reproducible evaluation" in plan
     assert "## Education" in plan and "## Change this plan" in plan
     saved = selection.Selection.model_validate_json((folder / selection.SELECTION_FILE).read_text())
     assert saved.covered == {"R1": "strong", "R2": "partial"}

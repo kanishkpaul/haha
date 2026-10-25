@@ -24,7 +24,7 @@ from . import selection as sel_mod
 from .annotate import _variants
 from .bank import Bank
 from .match import entry_label, tokens
-from .models import CheckReport, Claim, Entry, Finding, JobSpec, Match, Selection, TailoredBullet, Writing
+from .models import TRUTH_RULE, CheckReport, Claim, Entry, Finding, JobSpec, Match, Selection, TailoredBullet, Writing
 from .paths import WORK_DIR, prepared
 from .textutil import md_links, md_plain
 
@@ -189,6 +189,8 @@ Write `{draft_path}`: JSON matching the schema at the end. Then run `uv run tail
 
 The plan (`plan.md`) already chose what goes on the page. Your job is the wording.
 
+{truth_rule} Write every claim below with the same confidence.
+
 - **One bullet per claim below**, citing its id in `claim_ids`, under its own `entry_id`. Two claims of
   the same entry may share one bullet (cite both) when that reads better and fits both budgets combined.
 - **Facts come only from the cited claims.** Every number, name, tool, dataset and outcome must be in
@@ -312,7 +314,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
         **{k: ", ".join(v) or "none" for k, v in posting_terms(spec).items()},
         keywords=keywords, banned=", ".join(f"“{b}”" for b in BANNED), headlines="; ".join(f"“{h}”" for h in headlines),
         summary_rule=summary_rule, skills=skills or "- (none)", entries="\n\n".join(blocks), seeds=seeds,
-        schema=json.dumps(Writing.model_json_schema(), indent=2),
+        schema=json.dumps(Writing.model_json_schema(), indent=2), truth_rule=TRUTH_RULE,
     ), encoding="utf-8")  # fmt: skip
     return pack
 

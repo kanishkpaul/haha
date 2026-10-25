@@ -11,7 +11,7 @@ Tailors Kanishk Paul's resume to one job. `README.md` is the overview; `docs/wor
 ## Sources of truth
 
 - Facts come only from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md`. Never add a skill, metric, title, date, employer or outcome it does not contain.
-- Every record entry is true. Weak or missing proof means a lost artifact, never doubt; proof strength must not decide what goes on the page.
+- **Truth rule (never break it; `../TRUTH_RULE.md`):** every record entry is true. Proof sufficiency is known (proof cards, `claim.proof`) but never weights a claim or entry: no stage may rank, select, order, hide, hedge or question anything by proof count, type or personal-account status. Proof may only list what can be shown (public links, provenance, the gap report's "No artifact to show"). Every prompt pack states `models.TRUTH_RULE`; `tests/test_truth_rule.py` enforces it. Never relax that test.
 - Keep each metric's qualifying conditions (record section 15) and the attribution, version and visibility rules (section 12.3). Team results stay team results; don't link private repos.
 - Write at the record's "strongest reasonable" ceiling: ownership, depth, scale, outcomes. Use the posting's exact terms wherever a claim describes that work.
 - Corrections go in `../haha-data/record_updates.yaml`, not in the record: `../evidence/` pins the record's SHA-256 and line numbers. Detail from the old megadoc (section 17) enters through `archive_claims` in an entry's overlay, copied word for word.

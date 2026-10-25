@@ -24,6 +24,7 @@ from .annotate import Tagger
 from .bank import Bank
 from .jobspec import norm
 from .models import (
+    TRUTH_RULE,
     CheckReport,
     Claim,
     Coverage,
@@ -320,12 +321,12 @@ def load_match(folder: Path) -> tuple[Match | None, CheckReport]:
 
 def _claim_line(bank: Bank, claim: Claim) -> str:
     entry = bank.entries[claim.entry_id]
-    facts = [f"proof: {claim.proof}"]
+    facts = []  # never the claim's proof: it must not sway a verdict
     if entry.team:
         facts.append("team work")
     if claim.conditions:
         facts.append("conditions: " + "; ".join(md_plain(c) for c in claim.conditions))
-    return f"`{claim.id}` {claim_text(claim)} *({'; '.join(facts)})*"
+    return f"`{claim.id}` {claim_text(claim)}" + (f" *({'; '.join(facts)})*" if facts else "")
 
 
 def entry_label(entry: Entry) -> str:
@@ -344,6 +345,8 @@ Write `{match_path}`: JSON matching the schema at the end. Then run `uv run tail
 A screener reads the resume requirement by requirement and marks each Meets, Does not meet or
 Unknown. Judge as that screener would, using only the claims below. These verdicts decide what
 the resume says: an unsupported requirement is never written into it.
+
+{truth_rule}
 
 - `key`: `{key}`.
 - `track`: the role track the resume should lead with, one of: {tracks}.
@@ -403,7 +406,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) ->
         company=spec.company, match_path=folder / MATCH_FILE, folder=folder, key=spec.key,
         tracks=", ".join(f"`{t}`" for t in targets), suggested=retrieval.tracks[0] if retrieval.tracks else targets[0],
         max_support=MAX_SUPPORT, requirements="\n\n".join(blocks), appendix="\n".join(appendix).strip(),
-        schema=json.dumps(Match.model_json_schema(), indent=2),
+        schema=json.dumps(Match.model_json_schema(), indent=2), truth_rule=TRUTH_RULE,
     ), encoding="utf-8")  # fmt: skip
     (folder / HITS_FILE).write_text(retrieval.model_dump_json(indent=2), encoding="utf-8")
     return pack
@@ -427,7 +430,7 @@ def weighted_coverage(spec: JobSpec, m: Match, kind: str) -> float | None:
 
 
 def best_proof(bank: Bank, cov: Coverage) -> ProofStrength:
-    """The strongest proof among the supports that carry the verdict."""
+    """What can be shown for the supports that carry the verdict. Feeds only the "No artifact to show" list."""
     carrying = [s for s in cov.support if s.strength == cov.verdict] or cov.support
     found = [bank.claim(s.claim_id).proof for s in carrying]
     return min(found, key=_PROOF_ORDER.index, default="none")
@@ -471,11 +474,11 @@ def gap_report(spec: JobSpec, m: Match, bank: Bank, retrieval: Retrieval | None 
         if not items:
             lines.extend(["None.", ""])
             return
-        head = "| Req | Kind | Weight | Ask | Evidence | Proof |" + (" Missing |" if with_note else "")
-        lines.extend([head, "|---" * (7 if with_note else 6) + "|"])
+        head = "| Req | Kind | Weight | Ask | Evidence |" + (" Missing |" if with_note else "")
+        lines.extend([head, "|---" * (6 if with_note else 5) + "|"])
         for c in items:
             r = reqs[c.requirement_id]
-            row = f"| {r.id} | {r.kind} | {r.weight} | {_cell(r.text)} | {_evidence(bank, c)} | {best_proof(bank, c)} |"
+            row = f"| {r.id} | {r.kind} | {r.weight} | {_cell(r.text)} | {_evidence(bank, c)} |"
             lines.append(row + (f" {_cell(c.note)} |" if with_note else ""))
         lines.append("")
 

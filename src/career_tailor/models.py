@@ -51,7 +51,18 @@ class Repo(Model):
     summary: str = ""
 
 
-ProofStrength = Literal["collected", "accepted", "account", "none"]  # best first
+# What proof exists for a claim: a collected artifact, a closure Kanishk accepted, his account alone, or
+# no card. It only says whether there's something to show on request. It is never a value or truth signal:
+# no stage may rank, pick, drop, hide, hedge or soften a claim by it (see TRUTH_RULE, tests/test_truth_rule.py).
+ProofStrength = Literal["collected", "accepted", "account", "none"]
+
+# Stated in every prompt pack so that no model working from these files weighs proof.
+TRUTH_RULE = (
+    "**Every record entry is true.** Kanishk added only true entries and never inflates them. Proof (whether an "
+    "artifact survives, its type, how many there are, or a personal account) only says whether there is something "
+    "to show on request. It never makes a claim or entry worth more or less: never rank, pick, drop, hide, hedge, "
+    "soften or question anything because of it."
+)
 
 
 class ProofArtifact(Model):
@@ -69,7 +80,7 @@ class ProofArtifact(Model):
 
 
 class ProofCard(Model):
-    """A proof card from the evidence folder: what backs one career entry, and how strongly."""
+    """A proof card from the evidence folder: which artifacts survive for one career entry."""
 
     id: str  # CAREER-043
     title: str
@@ -112,7 +123,7 @@ class Claim(Model):
     source: SourceRef | None = None  # None for record updates
     origin: str = ""  # record update source, when not from the record
     evidence_ids: list[str] = Field(default_factory=list)  # proof-card ids, e.g. CAREER-042
-    proof: ProofStrength = "none"  # strongest backing among its proof cards
+    proof: ProofStrength = "none"  # what its proof cards can show; never weighs the claim
     public_links: list[str] = Field(default_factory=list)  # public artifact URLs from its own proof cards
 
 
@@ -154,7 +165,7 @@ class Annotation(Model):
     hide_claims: list[str] = Field(default_factory=list)
     extra_claims: list[str] = Field(default_factory=list)  # verbatim sentences from the entry's notes or fields
     archive_claims: list[str] = Field(default_factory=list)  # verbatim sentences from record section 17 (megadoc)
-    claim_proof: dict[str, ProofStrength] = Field(default_factory=dict)  # downgrade where a card narrows a claim
+    claim_proof: dict[str, ProofStrength] = Field(default_factory=dict)  # "account" where no artifact shows a detail
     same_work: list[str] = Field(default_factory=list)  # entries or row claims that must not appear alongside it
     note: str = ""
 

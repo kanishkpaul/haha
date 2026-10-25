@@ -19,7 +19,7 @@ from . import selection as sel_mod
 from .bank import Bank
 from .jobspec import norm
 from .match import tokens
-from .models import Finding, JobSpec, Review, Selection, TailoredBullet, Writing
+from .models import TRUTH_RULE, Finding, JobSpec, Review, Selection, TailoredBullet, Writing
 from .paths import WORK_DIR, prepared
 from .textutil import md_plain
 from .write import entry_link, render_draft, sources
@@ -222,6 +222,9 @@ isn't there, a dropped qualifier that changes the meaning, or a historical resul
 is not. When false, `problem` says exactly what isn't supported. One review per bullet, identified by
 its `claim_ids`.
 
+{truth_rule} "Supported" here means the bullet stays within its source claims' wording, never that
+an artifact exists.
+
 {bullets}
 
 ## 2. Screener
@@ -268,7 +271,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, sel: Selection, w: Writi
     pack.write_text(_PACK.format(
         company=spec.company, title=spec.title, review_path=folder / REVIEW_FILE, folder=folder,
         bullets="\n\n".join(blocks), requirements="\n".join(reqs), page=page_text(bank, spec, sel, w),
-        schema=json.dumps(Review.model_json_schema(), indent=2),
+        schema=json.dumps(Review.model_json_schema(), indent=2), truth_rule=TRUTH_RULE,
     ), encoding="utf-8")  # fmt: skip
     return pack
 
