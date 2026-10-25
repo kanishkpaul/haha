@@ -57,6 +57,11 @@ def names(text: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def _acronym_plural(name: str, lowered: str) -> bool:
+    """ "LLMs" when the claims say "LLM" (as in "LLM-written")."""
+    return bool(re.fullmatch(r"[A-Z][A-Z0-9]+s", name)) and name[:-1].lower() in lowered
+
+
 def _label(b: TailoredBullet) -> str:
     return "+".join(b.claim_ids)
 
@@ -79,7 +84,7 @@ def facts(w: Writing, bank: Bank, sel: Selection) -> list[Finding]:
 
         if extra := numbers.tokens(text, years=True) - numbers.tokens(source, years=True):
             findings.append(_finding("numbers", b, f"states {', '.join(sorted(extra))}, which its claims don't"))
-        if unknown := [n for n in names(text) if n.lower() not in lowered]:
+        if unknown := [n for n in names(text) if n.lower() not in lowered and not _acronym_plural(n, lowered)]:
             findings.append(_finding("names", b, f"names {', '.join(unknown)}, which its claims don't"))
         said = set(tokens(text)) | numbers.tokens(text, years=True)
         for claim in claims:

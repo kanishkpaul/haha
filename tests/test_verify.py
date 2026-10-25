@@ -294,3 +294,9 @@ def test_cli_check_renders_then_grades(data_dir, capsys, draft, sel, monkeypatch
     assert "Estimated screener grade: **A** (basic 100% Meets, preferred 0%)." in report
     assert "| R1 | basic | meets | Built a reproducible evaluation |" in report
     assert f"{len(draft.bullets)} of {len(draft.bullets)} bullets follow from their claims." in report
+
+
+def test_an_acronym_plural_counts_as_the_acronym():
+    assert verify._acronym_plural("LLMs", "llm-written world models")
+    assert not verify._acronym_plural("LLMs", "language models")
+    assert not verify._acronym_plural("Docs", "doc")
