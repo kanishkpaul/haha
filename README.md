@@ -6,7 +6,7 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-stages%200--6%20work-yellow)
+![status](https://img.shields.io/badge/status-stages%200--7%20work-brightgreen)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
@@ -66,9 +66,10 @@ flowchart LR
 | 4 | `write` | Bullets in the job's vocabulary, each citing its claims | ghostwriter with a conscience |
 | 5 | `verify` | Every number, date, name and skill checked against the evidence | the fact-checker nobody invited |
 | 6 | `render` | PDF/DOCX that fits the page | Tetris |
-| 7 | `ats` | Resume-Matcher parse check, round trip and score | letting the robot pre-judge you, privately |
+| 7 | `ats` | Resume-Matcher parse check and keyword score | letting the robot pre-judge you, privately |
+| 8 | `assemble` | Provenance for every line, and the two human gates | the paper trail |
 
-> **Status:** stages 0–6 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page, `uv run tailor write <folder>` turns the plan into guarded bullets, and `uv run tailor check <folder>` fact-checks them, renders a one-page PDF and DOCX, and simulates the screener. Stage 7 is still a docstring and a dream, and politely say so.
+> **Status:** stages 0–6 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page, `uv run tailor write <folder>` turns the plan into guarded bullets, and `uv run tailor check <folder>` fact-checks them, renders a one-page PDF and DOCX, and simulates the screener, and `uv run tailor run <url>` chains all of it, stopping where Claude has a prompt pack to fill and at two human gates.
 
 ## 🚀 Running it
 
@@ -128,7 +129,15 @@ The first run writes `write.prompt.md`: every planned claim with its conditions,
 uv run tailor check anthropic-research-engineer
 ```
 
-Fact-checks every bullet against its cited claims (numbers, names, tools, dates, metric conditions) and lints policy and style; then renders the page with RenderCV/Typst, reads the PDF back, fits it to the page (type and spacing first, re-planning only among written bullets if needed), writes a DOCX copy and runs Resume-Matcher's parse check on both. Last, Claude reviews each bullet for entailment and reads the page as a strict screener (`review.json`). `check_report.md` has the findings, the render log and an estimated A–D screener grade; the PDF and DOCX land in the application folder.
+Fact-checks every bullet against its cited claims (numbers, names, tools, dates, metric conditions) and lints policy and style; then renders the page with RenderCV/Typst, reads the PDF back, fits it to the page (type and spacing first, re-planning only among written bullets if needed), writes a DOCX copy and runs Resume-Matcher's parse check on both. Last, Claude reviews each bullet for entailment and reads the page as a strict screener (`review.json`). `check_report.md` has the findings, the render log, Resume-Matcher's keyword score (with the posting terms missing from the page) and an estimated A–D screener grade. The PDF, DOCX and a plain-text copy land in the application folder, next to `provenance.json`, which traces every line on the page to its claims, their lines in the career record and the proof cards behind them.
+
+**Or all of it at once:**
+
+```bash
+uv run tailor run https://job-boards.greenhouse.io/anthropic/jobs/5198255008
+```
+
+Runs every stage it can and stops where Claude has a prompt pack to fill, or at a gate: first the plan (`plan.md`, `gap_report.md`), then the final check (`check_report.md`, the PDF). Rerun it with the folder name to carry on; `--approve` approves the gate it stops at. Approvals live in `approvals.json` with a hash of what was approved, so a changed plan or page asks again.
 
 **8. Make sure the plumbing is plumbed:**
 
@@ -136,7 +145,7 @@ Fact-checks every bullet against its cited claims (numbers, names, tools, dates,
 uv run pytest
 ```
 
-**6. Put the robot back to sleep:**
+**9. Put the robot back to sleep:**
 
 ```bash
 scripts/stop-servers.sh
