@@ -1,6 +1,7 @@
 """Command-line entry point: `uv run tailor <command>`."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -275,6 +276,13 @@ def cmd_check(args: argparse.Namespace) -> int:
                 continue
             checks += found
             ats_lines.append(f"Resume-Matcher parse check, {path.name}: {result.get('overall_score')}/100")
+        try:
+            scored, found = ats.score(spec, b, sel, w)
+            (folder / ats.SCORE_FILE).write_text(json.dumps(scored, indent=2) + "\n", encoding="utf-8")
+            checks += found
+            ats_lines += ats.score_lines(scored)
+        except ats.RMError as err:
+            checks.append(Finding(check="ats", severity="warning", message=f"RM score skipped: {err}"))
     else:
         checks.append(
             Finding(check="ats", severity="warning", message="Resume-Matcher isn't available; no parse check")

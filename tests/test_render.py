@@ -188,3 +188,53 @@ def test_resume_matcher_parse_checks_a_render(mini_bank, sel, draft, tmp_path):
     data = render.rendercv_input(mini_bank, SPEC, sel, draft, today=FIXTURE_TODAY)
     result, found = ats.parse_check(render.render_pdf(tmp_path, data, "Ada_Example_Resume.pdf"))
     assert result["extractability"] == "full" and not [f for f in found if f.severity == "error"]
+
+
+SCORED = SPEC.model_copy(update={
+    "requirements": [
+        R1.model_copy(update={"keywords": ["reproducible evaluation", "Python", "Kubernetes", "evals"]}),
+        Requirement(id="R2", text="JAX", quote="JAX", kind="preferred", keywords=["JAX", "Python"]),
+        Requirement(id="R3", text="Own evals", quote="own evals", kind="responsibility"),
+    ],
+    "keywords": {"reproducible evaluation": [], "Python": [], "Kubernetes": [], "evals": ["evaluation"], "JAX": [],
+                 "speech": ["audio"]},
+})  # fmt: skip
+
+
+def test_job_keywords_split_required_preferred_and_other():
+    kw = ats.job_keywords(SCORED)
+    assert kw["role"] == SCORED.title and kw["company"] == "Acme"
+    assert kw["required_skills"] == ["reproducible evaluation", "Python", "Kubernetes", "evals"]
+    assert kw["preferred_skills"] == ["JAX"]  # Python is already required
+    assert kw["keywords"] == ["speech"]
+    assert kw["key_responsibilities"] == ["Own evals"]
+
+
+def test_resume_data_carries_the_page(mini_bank, sel, draft):
+    data = ats.resume_data(mini_bank, sel, draft)
+    assert data["personalInfo"]["title"] == draft.headline and data["personalInfo"]["email"] == "ada@example.com"
+    job = next(x for x in data["workExperience"] if x["company"] == "Example University")
+    assert job["description"][0].startswith("Built a reproducible evaluation")
+    texts = [t for x in data["workExperience"] + data["personalProjects"] for t in x["description"]]
+    awards = data["additional"]["awards"]
+    assert sorted(texts + awards) == sorted(render.md_plain(b.text) for b in draft.bullets)
+    assert data["additional"]["technicalSkills"] == [t for terms in draft.skills.values() for t in terms]
+    assert data["education"][0]["degree"].startswith("B.Sc.")
+
+
+def test_score_warns_on_required_terms_missing_from_the_page(monkeypatch, mini_bank, sel, draft):
+    seen = {}
+    monkeypatch.setattr(ats, "call", lambda tool, args: seen.update(tool=tool, args=args) or {"overall_score": 50})
+    result, found = ats.score(SCORED, mini_bank, sel, draft)
+    assert seen["tool"] == "score_resume" and set(seen["args"]) == {"resume_data", "keywords"}
+    assert result["overall_score"] == 50 and result["keywords"]["required_skills"][0] == "reproducible evaluation"
+    assert [f.message for f in found] == [
+        "required posting term 'Kubernetes' isn't on the page",
+        "required posting term 'evals' isn't on the page; the page says 'evaluation'",
+    ]
+
+
+@pytest.mark.local
+def test_resume_matcher_scores_a_draft(mini_bank, sel, draft):
+    result, _ = ats.score(SCORED, mini_bank, sel, draft)
+    assert 0 <= result["overall_score"] <= 100 and "keyword_match" in result["sub_scores"]
