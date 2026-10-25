@@ -6,9 +6,10 @@
 
 *A machine that turns a 250 KB career record into a one-page resume a robot can parse and a human can love, in the 7.4 seconds they'll spend on it.*
 
-![status](https://img.shields.io/badge/status-stages%200--7%20work-brightgreen)
+![status](https://img.shields.io/badge/status-v1.0%20it%20works-brightgreen)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
-![ats](https://img.shields.io/badge/ATS-gets%20a%20clean%20PDF-success)
+![tests](https://img.shields.io/badge/tests-264%20passing-success)
+![ats](https://img.shields.io/badge/ATS%20parse%20check-100%2F100-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
 ![humility](https://img.shields.io/badge/humility-on%20page%202-orange)
 
@@ -31,171 +32,142 @@ Somebody has to decide which four projects make it onto the page. That somebody 
 You give it:
 
 1. 📚 **The master career record**: everything, ever, with every caveat attached.
-2. 📋 **A job description**: the one you're applying to today, probably at 2 a.m.
+2. 📋 **A job posting**: the one you're applying to today, probably at 2 a.m.
 
 It gives you a resume that:
 
 - **parses cleanly** in Workday, Greenhouse, Lever and friends: one column, real text, no icons smuggled into the header;
-- **says what the job asked for**, in the job's own words, but only where the evidence actually supports it;
-- **cites a source for every bullet**, so no claim on the page is invented (the robots are already better than us at most things, they don't need to be better at lying too);
+- **says what the job asked for**, in the posting's exact words, but only where the record actually describes that work;
+- **cites a source for every line**, down to the record line and the proof card, so nothing on the page is invented (the robots are already better than us at most things, they don't need to be better at lying too);
 - **fits on the page** without shrinking the font to 6pt like an animal.
+
+## 🚀 Quick start
+
+```bash
+uv sync                                                                  # once
+uv run tailor bank                                                       # compile the career record
+uv run tailor run https://job-boards.greenhouse.io/anthropic/jobs/5198255008
+uv run tailor status                                                     # what's next, for every job
+```
+
+`tailor run` does everything it can and stops when it needs a brain or a human:
+
+- 🧠 **A prompt pack to fill.** Reading the posting, judging the evidence, writing bullets and reviewing the page are Claude's job, done right here in the session. No API key, no hidden calls. Python does the checking: every answer is validated before the run moves on.
+- 🙋 **A gate.** Gate 1: approve the plan. Gate 2: approve the page. `tailor run <name> --approve`, one gate per approval. Change the plan afterwards and it asks again.
+
+```text
+$ uv run tailor status
+anthropic  gate 2    grade C ATS 49.2  review check_report.md and the PDF, then tailor run anthropic --approve
+metr       gate 2    grade A ATS 33.5  review check_report.md and the PDF, then tailor run metr --approve
+prime      gate 2    grade A ATS 60.2  review check_report.md and the PDF, then tailor run prime --approve
+```
+
+Everything for one job lands in `../haha-data/applications/<company>-<role>-<date>/`: the PDF, DOCX and plain text, `check_report.md`, `gap_report.md`, `plan.md` and `provenance.json`. The working files hide in its `work/` folder. The full tour, plus pins, bans and other knobs, is in **[docs/workflow.md](docs/workflow.md)**.
 
 ## 🏭 How it works
 
 ```mermaid
 flowchart LR
     R[📚 career record] --> B[🧱 evidence bank]
-    J[📋 job description] --> S[🎯 job spec]
+    J[📋 job posting] --> S[🎯 job spec]
     B --> M[🔍 match + gaps]
     S --> M
     M --> P[🧮 optimiser picks what fits]
-    P --> W[✍️ write bullets]
+    P --> G1{🙋 gate 1}
+    G1 --> W[✍️ write bullets]
     W --> V[🕵️ verify every claim]
     V --> X[🖨️ render + fit page]
     X --> A[🤖 ATS parse check + score]
-    A --> O[📄 resume.pdf]
+    A --> G2{🙋 gate 2}
+    G2 --> O[📄 resume.pdf]
 ```
 
 | Stage | Module | What it does | Vibe |
 |:---:|---|---|---|
-| 0 | `bank` | Career record → atomic, citable claims, each keeping its conditions | Marie Kondo, but for a CV |
-| – | `masters` | Five role-track masters, loaded into Resume-Matcher | five versions of you, all real |
-| 1 | `jobspec` | Job description → weighted requirements, keywords, deal-breakers, which ATS they use | reading between the bullet points |
+| 0 | `bank` | Career record → atomic, citable claims, each keeping its conditions and proof | Marie Kondo, but for a CV |
+| 1 | `jobspec` | Posting → weighted requirements quoted verbatim, keywords, deal-breakers | reading between the bullet points |
 | 2 | `match` | Requirement → supporting claims, plus an honest gap report | "do you *actually* know Kubernetes" |
-| 3 | `selection` | An OR-Tools optimiser picks what fits the page budget | knapsack problem, but it's your life |
-| 4 | `write` | Bullets in the job's vocabulary, each citing its claims | ghostwriter with a conscience |
-| 5 | `verify` | Every number, date, name and skill checked against the evidence | the fact-checker nobody invited |
-| 6 | `render` | PDF/DOCX that fits the page | Tetris |
-| 7 | `ats` | Resume-Matcher parse check and keyword score | letting the robot pre-judge you, privately |
-| 8 | `assemble` | Provenance for every line, and the two human gates | the paper trail |
+| 3 | `selection` | An OR-Tools optimiser picks what fits the page | knapsack problem, but it's your life |
+| 4 | `write` | Bullets in the posting's vocabulary, each citing its claims | ghostwriter with a conscience |
+| 5 | `verify` | Numbers, names, conditions and ownership checked; a strict screener reads the page | the fact-checker nobody invited |
+| 6 | `render` | RenderCV/Typst PDF and a DOCX that fit the page, read back to be sure | Tetris |
+| 7 | `ats` | Resume-Matcher's parse check and keyword score | letting the robot pre-judge you, privately |
+| 8 | `assemble` | Provenance for every line, the two gates, `tailor status` | the paper trail |
 
-> **Status:** stages 0–6 work: `uv run tailor bank` compiles the career record into a citable evidence bank, `uv run tailor job <url>` reads a posting into a grounded job spec with a knockout check, and `uv run tailor plan <folder>` matches the requirements to the bank, writes an honest gap report and plans the page, `uv run tailor write <folder>` turns the plan into guarded bullets, and `uv run tailor check <folder>` fact-checks them, renders a one-page PDF and DOCX, and simulates the screener, and `uv run tailor run <url>` chains all of it, stopping where Claude has a prompt pack to fill and at two human gates.
+<details>
+<summary>🔧 <b>Running one stage at a time</b></summary>
 
-## 🚀 Running it
+`tailor run` chains these; you rarely need them alone.
 
-**1. Wake up the robot** (Resume-Matcher API on `:8000`, web app on `http://127.0.0.1:3000`):
+| Command | Does |
+|---|---|
+| `uv run tailor bank` | Compiles the record into `../haha-data/bank/` and writes `REPORT.md`. `--annotate` writes review prompts for the per-entry overlays. |
+| `uv run tailor job <url\|file>` | Fetches a Greenhouse, Ashby or Lever posting (or reads a file) and writes the job-spec prompt. `--check <name>` validates `jobspec.json` and writes `knockouts.md`. |
+| `uv run tailor plan <name>` | Writes the match prompt, then validates `match.json`, writes `gap_report.md` and plans the page into `plan.md`. |
+| `uv run tailor write <name>` | Writes the write prompt, then guards `draft.json` and writes `draft.md`. |
+| `uv run tailor check <name>` | Fact-checks, renders, fits, parse-checks and scores the page, then grades it from `review.json`. |
+| `uv run pytest` | Makes sure the plumbing is plumbed. |
+
+</details>
+
+<details>
+<summary>🤖 <b>Resume-Matcher's web app (optional)</b></summary>
+
+haha only needs Resume-Matcher's command line (`bin/rm`), which runs offline and writes nothing to its database. If you want its web app and tracker too:
 
 ```bash
-scripts/start-servers.sh
-```
-
-**2. Ask the robot how it's doing:**
-
-```bash
+scripts/start-servers.sh    # API on :8000, web app on http://127.0.0.1:3000
 bin/rm get_status
-```
-
-**3. Build the evidence bank** (writes `../haha-data/bank/` and its `REPORT.md`):
-
-```bash
-uv run tailor bank
-```
-
-`uv run tailor bank --annotate` writes one review prompt per entry to `../haha-data/work/annotate/`; the reviewed overlays go in `../haha-data/annotations/` and are re-applied on every build.
-
-**4. Read a job** (Greenhouse, Ashby or Lever URL, or a `.md` file):
-
-```bash
-uv run tailor job https://job-boards.greenhouse.io/anthropic/jobs/5198255008
-```
-
-This writes `posting.md` and a prompt pack to `../haha-data/applications/<company>-<role>-<date>/`. Claude fills `jobspec.json` from the pack; then
-
-```bash
-uv run tailor job --check anthropic-research-engineer
-```
-
-checks that every requirement quotes the posting verbatim, and writes `knockouts.md` (visa, location, degree, years) using `../haha-data/candidate.yaml` and the opportunity database's gate.
-
-**5. Match it to the evidence:**
-
-```bash
-uv run tailor plan anthropic-research-engineer
-```
-
-The first run retrieves candidate claims for each requirement and writes `match.prompt.md`. Claude fills `match.json` (verdicts, with every support quoting a claim verbatim); the second run validates it and writes `gap_report.md` (supported, weakly supported and unsupported requirements; unsupported ones never reach the resume) and `plan.md`: what goes on the page, chosen by an OR-Tools optimiser for coverage within the page budget, and what was left out and why. Pin or ban entries in `plan.edits.yaml` and rerun to change it.
-
-**6. Write it:**
-
-```bash
-uv run tailor write anthropic-research-engineer
-```
-
-The first run writes `write.prompt.md`: every planned claim with its conditions, team credit, the requirements it supports and a character budget, plus voice samples from earlier resumes. Claude fills `draft.json`; the second run guards it (every claim cited once, budgets held, no number, ownership word or banned phrase the claims don't support, skills only from the skills bank) and writes `draft.md`.
-
-**7. Check it:**
-
-```bash
-uv run tailor check anthropic-research-engineer
-```
-
-Fact-checks every bullet against its cited claims (numbers, names, tools, dates, metric conditions) and lints policy and style; then renders the page with RenderCV/Typst, reads the PDF back, fits it to the page (type and spacing first, re-planning only among written bullets if needed), writes a DOCX copy and runs Resume-Matcher's parse check on both. Last, Claude reviews each bullet for entailment and reads the page as a strict screener (`review.json`). `check_report.md` has the findings, the render log, Resume-Matcher's keyword score (with the posting terms missing from the page) and an estimated A–D screener grade. The PDF, DOCX and a plain-text copy land in the application folder, next to `provenance.json`, which traces every line on the page to its claims, their lines in the career record and the proof cards behind them.
-
-**Or all of it at once:**
-
-```bash
-uv run tailor run https://job-boards.greenhouse.io/anthropic/jobs/5198255008
-```
-
-Runs every stage it can and stops where Claude has a prompt pack to fill, or at a gate: first the plan (`plan.md`, `gap_report.md`), then the final check (`check_report.md`, the PDF). Rerun it with the folder name to carry on; `--approve` approves the gate it stops at. Approvals live in `approvals.json` with a hash of what was approved, so a changed plan or page asks again.
-
-**8. Make sure the plumbing is plumbed:**
-
-```bash
-uv run pytest
-```
-
-**9. Put the robot back to sleep:**
-
-```bash
 scripts/stop-servers.sh
 ```
 
-In the Claude desktop app, the `rm-backend` and `rm-frontend` launch configs do steps 1 and 4 for you.
+</details>
 
 ## 🗺️ Where things live
 
 ```text
-haha/                    code only, safe to open-source
-├── src/career_tailor/   one module per stage
-├── tests/               unit tests run on a synthetic record; `local` tests use yours
-├── templates/           RenderCV/Typst theme, if we outgrow the built-ins
+haha/                     code only, safe to open-source
+├── src/career_tailor/    one module per stage, plus cli.py
+├── tests/                run on a synthetic record; `local` tests use the real one
+├── docs/                 workflow guide, build plan, resume research
 ├── vendor/resume-matcher/  Resume-Matcher submodule (agent mode, no API key)
-├── bin/rm               run any Resume-Matcher tool: bin/rm --help
-└── scripts/             start/stop the servers
+├── bin/rm                any Resume-Matcher tool: bin/rm --help
+└── scripts/              start/stop Resume-Matcher's servers
 
-../haha-data/            personal data, never committed (HAHA_DATA_DIR)    🙈
-├── bank/                the evidence bank, every claim with receipts
-├── annotations/         reviewed overlays that survive bank rebuilds
-├── record_updates.yaml  dated corrections that supersede a record fact
-├── masters/             optional Resume-Matcher track masters
-├── jobs/                job descriptions go in here, done/ when finished
-├── applications/        one folder per application
-└── work/                prompt packs and scratch files
+../haha-data/             personal data, never committed (HAHA_DATA_DIR)    🙈
+├── bank/                 the evidence bank, every claim with receipts
+├── annotations/          reviewed overlays that survive bank rebuilds
+├── record_updates.yaml   dated corrections that supersede a record fact
+├── candidate.yaml        visa, location, start date: facts the record doesn't hold
+├── calibration.yaml      measured lines per page, so plans fit first time
+├── jobs/                 drop job descriptions here: tailor run acme.md
+└── applications/         one folder per application
 ```
 
-The career record is read from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md` (override with `HAHA_CAREER_RECORD`).
+The career record is read from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md` and proof cards from `../evidence/` (override with `HAHA_CAREER_RECORD`, `HAHA_PROOF_DIR`).
 
 ## 📜 House rules
 
 1. **Never invent anything.** Not a skill, metric, date, title or employer. If it isn't in the career record, it doesn't exist. Sorry, "10x engineer".
-2. **Team wins stay team wins.** Amazon and Blindfold were team efforts; we name who did which part.
-3. **Numbers keep their conditions.** "2.23% on 25 public games, explore-then-replay" is a real result. "Solved 13 games" is fan fiction.
-4. **Strongest reasonable version, always.** Modesty is great at dinner parties and terrible at the resume screen.
-5. **Don't edit `vendor/`.** We borrow Resume-Matcher, we don't remodel its kitchen.
+2. **Lost receipts aren't lies.** Everything in the record is true. A project whose repo died in 2024 counts the same as one with a link; it just gets a "have the story ready" note.
+3. **Team wins stay team wins.** Amazon and Blindfold were team efforts; we name who did which part.
+4. **Numbers keep their conditions.** "2.23% on 25 public games, explore-then-replay" is a real result. "Solved 13 games" is fan fiction.
+5. **Strongest reasonable version, always.** Modesty is great at dinner parties and terrible at the resume screen.
+6. **Don't edit `vendor/`.** We borrow Resume-Matcher, we don't remodel its kitchen.
 
 ## 🧑‍🔧 Fresh clone?
 
 ```bash
 git clone --recurse-submodules https://github.com/kanishkpaul/haha.git
+cd haha && uv sync
 ```
 
-Then follow `vendor/resume-matcher/SETUP.md`: `uv sync` and `uv run playwright install chromium` in the backend, `npm install` in the frontend. Set `LLM_PROVIDER=agent` in `vendor/resume-matcher/apps/backend/.env`, because in this house, Claude does the writing and Resume-Matcher does the judging.
+For Resume-Matcher's parse check and score, follow `vendor/resume-matcher/SETUP.md`: `uv sync` and `uv run playwright install chromium` in its backend, and `LLM_PROVIDER=agent` in `vendor/resume-matcher/apps/backend/.env`. In this house, Claude does the writing and Resume-Matcher does the judging.
 
 ## 🙏 Standing on the shoulders of
 
-- [**Resume-Matcher**](https://github.com/srbhr/Resume-Matcher): stores, validates, scores, parse-checks and renders. Does the robot's job so we don't have to guess what the robot thinks.
-- [**RenderCV**](https://github.com/rendercv/rendercv): LaTeX-quality PDFs without having to learn LaTeX (again).
+- [**Resume-Matcher**](https://github.com/srbhr/Resume-Matcher): parse-checks and scores. Does the robot's job so we don't have to guess what the robot thinks.
+- [**RenderCV**](https://github.com/rendercv/rendercv): typeset PDFs without having to learn LaTeX (again).
 - [**OR-Tools**](https://developers.google.com/optimization): for deciding which of 106 projects get a seat on the bus.
 
 ---
