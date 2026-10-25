@@ -219,6 +219,8 @@ The README is a plan; no completed effect is claimed.
 
 ## 17. Original resume megadoc — complete historical text
 
+11. Early on, I computed rolling variance and distribution metrics over 30 daily windows of market data\~ by hand.
+
 ### EXP-99 · Archived Card — Must Be Ignored
 
 - Archived bullet that the parser must skip.

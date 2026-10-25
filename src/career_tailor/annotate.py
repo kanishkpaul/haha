@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from .models import Annotation, Claim, DateRange, Entry, ProofCard, SkillArea
+from .models import Annotation, Claim, DateRange, Entry, ProofCard, SkillArea, SourceRef
 from .textutil import md_plain
 
 # Single words that are not skills on their own once a slash phrase is expanded.
@@ -73,14 +73,23 @@ def load_annotations(directory: Path) -> list[Annotation]:
             for f in sorted(directory.glob("*.yaml"))]  # fmt: skip
 
 
-def add_extra_claims(entries: list[Entry], annotations: list[Annotation]) -> list[str]:
-    """Promote verbatim note or field sentences to claims. Runs before metrics, conditions,
-    tagging and proof links, so promoted claims get all of them. Returns problems."""
+ARCHIVE_SECTION = 17  # the original megadoc: the full personal account behind the cards' shorter rows
+
+
+def _plain(text: str) -> str:
+    return md_plain(text.replace("\\", ""))
+
+
+def add_extra_claims(entries: list[Entry], annotations: list[Annotation], archive: list[tuple[int, str]] = ()
+                     ) -> list[str]:  # fmt: skip
+    """Promote verbatim note or field sentences, and verbatim sentences from the megadoc (`archive`: its
+    numbered lines), to claims. Runs before metrics, conditions, tagging and proof links, so promoted claims
+    get all of them. Returns problems."""
     by_id = {e.id: e for e in entries}
     problems = []
     for a in annotations:
         entry = by_id.get(a.entry_id)
-        if entry is None or not a.extra_claims:
+        if entry is None:
             continue
         source_text = md_plain(" ".join([*entry.notes.values(), *entry.fields.values()]))
         for n, text in enumerate(a.extra_claims, start=1):
@@ -89,6 +98,15 @@ def add_extra_claims(entries: list[Entry], annotations: list[Annotation]) -> lis
                 continue
             entry.claims.append(Claim(id=f"{entry.id}.n{n}", entry_id=entry.id, kind="fact", text=text,
                                       label="from notes", source=entry.source))  # fmt: skip
+        for n, text in enumerate(a.archive_claims, start=1):
+            line = next((no for no, raw in archive if _plain(text) in _plain(raw)), None)
+            if line is None:
+                problems.append(f"annotation {a.entry_id}: archive claim is not verbatim from section "
+                                f"{ARCHIVE_SECTION}: {text[:60]}")  # fmt: skip
+                continue
+            entry.claims.append(Claim(id=f"{entry.id}.a{n}", entry_id=entry.id, kind="fact", text=_plain(text),
+                                      label=f"from section {ARCHIVE_SECTION}",
+                                      source=SourceRef(line_start=line, line_end=line)))  # fmt: skip
     return problems
 
 
@@ -189,6 +207,9 @@ Rules (from the career record, sections 11, 12.3 and 15):
   set it to "account". Never raise a claim above what its cards show.
 - `extra_claims`: sentences copied word for word from this entry's notes or fields that state a
   result or contribution, for entries whose content sits only in notes. Never paraphrase.
+- `archive_claims`: sentences copied word for word from the original megadoc (record section 17) that
+  state a result, method or skill this entry's card shortens or leaves out. Never paraphrase; keep
+  approximate multiples ("~10×") out unless their baseline is in the same sentence.
 
 ## Parsed entry
 

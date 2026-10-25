@@ -126,6 +126,23 @@ def test_promoted_claims_get_metrics_and_conditions(data_dir):
     assert not [n for n in built.notes["problems"] if n.startswith("annotation")]
 
 
+def test_archive_claims_must_be_verbatim_from_section_17(data_dir, mini_record):
+    p = paths.load()
+    write_annotation(p.annotations, {"entry_id": "RES-03", "archive_claims": [
+        "I computed rolling variance and distribution metrics over 30 daily windows of market data~ by hand.",
+        "I computed rolling variance over 300 windows.",
+        "Archived bullet that the parser must skip.",  # a card's text inside section 17 still counts as section 17
+    ]})  # fmt: skip
+    built = bank.compile_bank(p)
+    lines = mini_record.read_text().split("\n")
+    claims = {c.id: c for c in built.entries["RES-03"].claims if ".a" in c.id}
+    assert set(claims) == {"RES-03.a1", "RES-03.a3"}
+    first = claims["RES-03.a1"]
+    assert "rolling variance" in lines[first.source.line_start - 1] and first.label == "from section 17"
+    assert "\\" not in first.text and [m.text for m in first.metrics] == ["30"]
+    assert any("archive claim is not verbatim" in n for n in built.notes["problems"])
+
+
 def test_packs_show_proof_cards(data_dir, mini_record):
     from test_bank import proof_cards
 

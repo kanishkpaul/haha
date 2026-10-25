@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 
 from . import record as record_mod
-from .annotate import add_extra_claims, apply_annotations, apply_proof_overrides, load_annotations, tag
+from .annotate import ARCHIVE_SECTION, add_extra_claims, apply_annotations, apply_proof_overrides, load_annotations, tag
 from .extract import extract, load_updates
 from .models import BankManifest, Entry, MetricRow, Profile, ProofArtifact, ProofCard, Repo, SkillArea, Track
 from .paths import Paths
@@ -142,7 +142,9 @@ def compile_bank(p: Paths) -> Bank:
     record_sha = sha256(p.career_record)
     profile, entries, notes = extract(rec, load_updates(p.record_updates))
     annotations = load_annotations(p.annotations)
-    notes["problems"] += add_extra_claims(entries, annotations)
+    archive = rec.section(ARCHIVE_SECTION)
+    archive_lines = [(no, rec.line(no)) for no in range(archive.line, archive.end + 1)] if archive else []
+    notes["problems"] += add_extra_claims(entries, annotations, archive_lines)
     tables = read_tables(rec)
     attach_metrics(entries)
     notes["info"] = attach(tables, entries)
