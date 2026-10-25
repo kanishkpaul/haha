@@ -34,10 +34,11 @@ from . import selection as sel_mod
 from .bank import Bank
 from .jobspec import norm
 from .models import Finding, JobSpec, Match, PlanEdits, Selection, Writing
+from .paths import WORK_DIR
 from .textutil import md_links, md_plain
 from .write import contact_line, education_lines, entry_link
 
-RENDER_DIR = "render"
+RENDER_DIR = f"{WORK_DIR}/render"
 YAML_FILE = "resume.yaml"
 HEADING_CHARS = 88  # an entry heading longer than this at 10 pt wraps beside the date column; the link is dropped
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]

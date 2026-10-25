@@ -1,4 +1,4 @@
-"""Command-line entry point: `uv run tailor <command>`."""
+"""haha: tailor one resume to one job. Start with `tailor run <posting url>`; `tailor status` says what's next."""
 
 import argparse
 import json
@@ -27,12 +27,12 @@ from .models import Finding, Posting, Review, Selection, Writing
 
 COMMANDS = {
     "bank": "Compile the career record into the evidence bank",
-    "masters": "Build and load the five role-track masters",
     "job": "Analyse a job description into a job spec",
     "plan": "Gap report and selection plan for a job",
     "write": "Write the tailored resume for an approved plan",
     "check": "Verify, render, parse-check and score an application",
     "run": "Run every stage for a posting, stopping at prompt packs and the two gates",
+    "status": "List applications, where each stands and what to do next",
 }
 
 
@@ -151,7 +151,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         return 0
     if m is not None:
         report = match.validate(m, spec, b)
-    (folder / match.CHECK_FILE).write_text(match.render_check(report), encoding="utf-8")
+    paths.prepared(folder / match.CHECK_FILE).write_text(match.render_check(report), encoding="utf-8")
     for f in report.findings:
         print(f"{f.severity}: [{f.check}] {f.message}")
     if not report.ok or m is None:
@@ -217,7 +217,7 @@ def cmd_write(args: argparse.Namespace) -> int:
         print(f"error: {write.WRITING_FILE}: {str(err)[:500]}", file=sys.stderr)
         return 1
     report = write.guard(w, b, spec, m, sel)
-    (folder / write.CHECK_FILE).write_text(write.render_check(report), encoding="utf-8")
+    paths.prepared(folder / write.CHECK_FILE).write_text(write.render_check(report), encoding="utf-8")
     for f in report.findings:
         print(f"{f.severity}: [{f.check}] {f.message}")
     if not report.ok:
@@ -356,8 +356,26 @@ def _gate(folder: Path, gate: str, what: str) -> None:
     print(f"approve with `tailor run {folder.name} --approve`")
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    p = paths.load()
+    folders = sorted(f.parent for f in p.applications.glob("*/posting.json"))
+    if not folders:
+        print(f"no applications in {p.applications} yet; start one with `tailor run <posting url>`")
+        return 0
+    names = assemble.short_names(folders)
+    width = max(len(n) for n in names.values())
+    for f in folders:
+        r = assemble.status(f, names[f])
+        extra = " ".join(x for x in (f"grade {r.grade}" if r.grade else "",
+                                     f"ATS {r.ats_score:g}" if r.ats_score is not None else "") if x)  # fmt: skip
+        print(f"{names[f]:<{width}}  {r.stage:<8}  {extra:<16}  {r.next}")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     p = paths.load()
+    if not Path(args.source).expanduser().exists() and (p.jobs / args.source).is_file():
+        args.source = str(p.jobs / args.source)  # a job description dropped in HAHA_DATA_DIR/jobs/
     source = Path(args.source).expanduser()
     folder = resolve_application(p, args.source) if not source.is_file() else None
     if folder is None and "://" in args.source:
@@ -434,15 +452,12 @@ def main_run(argv: list[str] | None = None) -> int:
         if name in ("plan", "write", "check"):
             cmd.add_argument("folder", help="application folder (path, name, or unique name prefix)")
         if name == "run":
-            cmd.add_argument("source", help="posting URL or file, or an application folder (path, name or prefix)")
+            cmd.add_argument("source", help="posting URL, a file (or a file name in jobs/), or an application folder")
             cmd.add_argument("--approve", action="store_true", help="approve the gate the run stops at")
             cmd.add_argument("--company", help="company name to use instead of the board's")
     args = parser.parse_args(argv)
     handlers = {"bank": cmd_bank, "job": cmd_job, "plan": cmd_plan, "write": cmd_write, "check": cmd_check,
-                "run": cmd_run}  # fmt: skip
-    if args.command not in handlers:
-        print(f"tailor {args.command}: not implemented yet", file=sys.stderr)
-        return 1
+                "run": cmd_run, "status": cmd_status}  # fmt: skip
     return handlers[args.command](args)
 
 

@@ -20,10 +20,11 @@ from .bank import Bank
 from .jobspec import norm
 from .match import tokens
 from .models import Finding, JobSpec, Review, Selection, TailoredBullet, Writing
+from .paths import WORK_DIR, prepared
 from .textutil import md_plain
 from .write import entry_link, render_draft, sources
 
-PACK_FILE = "verify.prompt.md"
+PACK_FILE = f"{WORK_DIR}/verify.prompt.md"
 REVIEW_FILE = "review.json"
 REPORT_FILE = "check_report.md"
 
@@ -263,7 +264,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, sel: Selection, w: Writi
             lines.append(f"- Team credit: {md_plain(entry.notes['Team credit'])}")
         blocks.append("\n".join(lines))
     reqs = [f"- {r.id} ({r.kind}): “{r.quote}”" for r in spec.requirements if r.kind != "knockout"]
-    pack = folder / PACK_FILE
+    pack = prepared(folder / PACK_FILE)
     pack.write_text(_PACK.format(
         company=spec.company, title=spec.title, review_path=folder / REVIEW_FILE, folder=folder,
         bullets="\n\n".join(blocks), requirements="\n".join(reqs), page=page_text(bank, spec, sel, w),
@@ -348,7 +349,7 @@ def render_report(spec: JobSpec, w: Writing, checks: list[Finding], review: Revi
     lines = [f"# Check report: {spec.title} at {spec.company}", ""]
     if review is None:
         lines += [
-            "**Waiting for the review.** Fill `review.json` from `verify.prompt.md`, then run `tailor check`.",
+            "**Waiting for the review.** Fill `review.json` from `work/verify.prompt.md`, then run `tailor check`.",
             "",
         ]
     else:

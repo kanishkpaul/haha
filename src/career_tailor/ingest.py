@@ -17,6 +17,9 @@ from urllib.parse import parse_qs, urlparse
 
 from .htmltext import html_to_text
 from .models import Posting
+from .paths import WORK_DIR, prepared
+
+RAW_FILE = f"{WORK_DIR}/raw.json"
 
 FetchJson = Callable[[str], object]
 
@@ -152,14 +155,14 @@ def find_application(applications: Path, key: str) -> Path | None:
 
 
 def save_posting(applications: Path, posting: Posting, raw: object) -> Path:
-    """Write posting.json, posting.md and raw.json to the posting's application folder (reused on refetch)."""
+    """Write posting.json, posting.md and work/raw.json to the posting's application folder (reused on refetch)."""
     folder = find_application(applications, posting.key)
     if folder is None:
         day = posting.fetched_at[:10]
         folder = applications / f"{slug(posting.company)}-{slug(posting.title)}-{day}"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "posting.json").write_text(posting.model_dump_json(indent=2), encoding="utf-8")
-    (folder / "raw.json").write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    prepared(folder / RAW_FILE).write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
     header = [f"# {posting.title}", "", f"**{posting.company}** · {posting.location or 'location not stated'}"]
     extras = [posting.workplace, posting.employment_type, posting.compensation, posting.department]
     if any(extras):

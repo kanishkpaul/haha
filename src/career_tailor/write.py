@@ -25,12 +25,13 @@ from .annotate import _variants
 from .bank import Bank
 from .match import entry_label, tokens
 from .models import CheckReport, Claim, Entry, Finding, JobSpec, Match, Selection, TailoredBullet, Writing
+from .paths import WORK_DIR, prepared
 from .textutil import md_links, md_plain
 
 WRITING_FILE = "draft.json"
 DRAFT_FILE = "draft.md"
-PACK_FILE = "write.prompt.md"
-CHECK_FILE = "write.check.md"
+PACK_FILE = f"{WORK_DIR}/write.prompt.md"
+CHECK_FILE = f"{WORK_DIR}/write.check.md"
 DRIFT = 0.6  # share of a bullet's content words that should come from its sources or the posting
 MAX_SKILLS = 18
 
@@ -305,7 +306,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection
     keywords = ", ".join(f"{k} ({', '.join(v)})" if v else k for k, v in spec.keywords.items()) or "none listed"
     skills = "\n".join(f"- {area}: {', '.join(terms)}" for area, terms in suggested_skills(bank, sel).items())
     seeds = "\n".join(f"- {s}" for s in style_seeds(record_text, spec)) or "- (none in the record)"
-    pack = folder / PACK_FILE
+    pack = prepared(folder / PACK_FILE)
     pack.write_text(_PACK.format(
         company=spec.company, title=spec.title, draft_path=folder / WRITING_FILE, folder=folder,
         **{k: ", ".join(v) or "none" for k, v in posting_terms(spec).items()},

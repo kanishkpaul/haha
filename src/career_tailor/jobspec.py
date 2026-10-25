@@ -11,10 +11,11 @@ import re
 from pathlib import Path
 
 from .models import CheckReport, Finding, JobSpec, Posting
+from .paths import WORK_DIR, prepared
 
 SPEC_FILE = "jobspec.json"
-PACK_FILE = "jobspec.prompt.md"
-CHECK_FILE = "jobspec.check.md"
+PACK_FILE = f"{WORK_DIR}/jobspec.prompt.md"
+CHECK_FILE = f"{WORK_DIR}/jobspec.check.md"
 
 _QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-", " ": " "})
 _REQUIREMENT_HEADINGS = re.compile(
@@ -109,7 +110,7 @@ def check_folder(folder: Path) -> tuple[CheckReport, JobSpec | None]:
     except ValueError as err:
         return CheckReport(findings=[Finding(check="schema", severity="error", message=str(err)[:500])]), None
     report = validate(spec, posting)
-    (folder / CHECK_FILE).write_text(render_check(report, spec), encoding="utf-8")
+    prepared(folder / CHECK_FILE).write_text(render_check(report, spec), encoding="utf-8")
     return report, spec
 
 
@@ -161,7 +162,7 @@ The spec drives what goes on the resume, and screeners judge requirement by requ
 
 def write_pack(folder: Path) -> Path:
     posting = Posting.model_validate_json((folder / "posting.json").read_text(encoding="utf-8"))
-    pack = folder / PACK_FILE
+    pack = prepared(folder / PACK_FILE)
     pack.write_text(_PACK.format(
         spec_path=folder / SPEC_FILE, folder=folder, key=posting.key, title=posting.title,
         posting_md=(folder / "posting.md").read_text(encoding="utf-8").strip(),

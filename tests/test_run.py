@@ -113,3 +113,31 @@ def test_a_current_plan_is_not_replanned(app):
     later = os.stat(folder / match.MATCH_FILE).st_mtime + 10
     os.utime(folder / selection.SELECTION_FILE, (later, later))
     assert run(folder) == 0 and calls == ["job"]
+
+
+def test_status_names_the_stage_and_next_step(app):
+    folder, _ = app
+    assert assemble.status(folder).stage == "job spec"
+    for name in (jobspec.SPEC_FILE, match.MATCH_FILE, selection.SELECTION_FILE):
+        (folder / name).write_text("{}")
+    st = assemble.status(folder, "acme")
+    assert st.stage == "gate 1" and st.next.endswith("tailor run acme --approve")
+    assemble.approve(folder, "plan")
+    assert assemble.status(folder).stage == "write"
+    (folder / verify.REPORT_FILE).write_text("Estimated screener grade: **B** (basic 80% Meets).")
+    assert assemble.status(folder).grade == "B"
+
+
+def test_short_names_are_unique_prefixes(tmp_path):
+    names = ["acme-ml-engineer-2031", "acme-research-2031", "zeta-agents-2031"]
+    folders = [tmp_path / n for n in names]
+    assert list(assemble.short_names(folders).values()) == ["acme-ml", "acme-research", "zeta"]
+
+
+def test_run_finds_a_job_file_in_the_jobs_folder(data_dir, monkeypatch):
+    (data_dir / "jobs").mkdir(parents=True)
+    (data_dir / "jobs" / "acme.md").write_text("# ML Engineer")
+    seen = []
+    monkeypatch.setattr(cli, "ingest_posting", lambda p, source, company: seen.append(source))
+    cli.main_run(["run", "acme.md"])
+    assert seen == [str(data_dir / "jobs" / "acme.md")]

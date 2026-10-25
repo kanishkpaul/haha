@@ -25,6 +25,15 @@ _DEFAULT_PROOF = REPO.parent / "evidence"
 _DEFAULT_OUTPUTS = REPO.parent / "outputs"
 
 
+WORK_DIR = "work"  # inside an application folder: prompt packs, check logs, raw fetches, render scratch
+
+
+def prepared(path: Path) -> Path:
+    """`path`, with its parent folder created."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _env_path(name: str, default: Path) -> Path:
     value = os.environ.get(name)
     return Path(value).expanduser().resolve() if value else default
@@ -48,10 +57,6 @@ class Paths:
     @property
     def record_updates(self) -> Path:
         return self.data / "record_updates.yaml"
-
-    @property
-    def masters(self) -> Path:
-        return self.data / "masters"
 
     @property
     def jobs(self) -> Path:

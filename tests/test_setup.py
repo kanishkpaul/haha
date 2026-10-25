@@ -8,7 +8,7 @@ import pytest
 
 from career_tailor import paths
 
-STAGES = ["bank", "jobspec", "match", "selection", "masters", "write", "verify", "render", "ats", "cli"]
+STAGES = ["bank", "jobspec", "match", "selection", "write", "verify", "render", "ats", "assemble", "cli"]
 
 
 def test_stage_modules_import():

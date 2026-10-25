@@ -37,12 +37,13 @@ from .models import (
     Retrieval,
     Track,
 )
+from .paths import WORK_DIR, prepared
 from .textutil import md_plain
 
 MATCH_FILE = "match.json"
-PACK_FILE = "match.prompt.md"
-HITS_FILE = "match.hits.json"
-CHECK_FILE = "match.check.md"
+PACK_FILE = f"{WORK_DIR}/match.prompt.md"
+HITS_FILE = f"{WORK_DIR}/match.hits.json"
+CHECK_FILE = f"{WORK_DIR}/match.check.md"
 GAP_FILE = "gap_report.md"
 
 TOP_K = 8
@@ -397,7 +398,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) ->
             current = entry.id
         appendix.append(f"- {_claim_line(bank, claim)}")
     targets = [t.target for t in bank.tables.tracks]
-    pack = folder / PACK_FILE
+    pack = prepared(folder / PACK_FILE)
     pack.write_text(_PACK.format(
         company=spec.company, match_path=folder / MATCH_FILE, folder=folder, key=spec.key,
         tracks=", ".join(f"`{t}`" for t in targets), suggested=retrieval.tracks[0] if retrieval.tracks else targets[0],

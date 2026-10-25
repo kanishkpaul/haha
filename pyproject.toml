@@ -1,7 +1,7 @@
 [project]
 name = "career-tailor"
-version = "0.1.0"
-description = "Tailor Kanishk Paul's resume to a job from the master career record, with Resume-Matcher as the ATS checker."
+version = "1.0.0"
+description = "Turn a master career record and a job posting into a one-page, fact-checked, ATS-clean resume."
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.9",
@@ -10,6 +10,7 @@ dependencies = [
     "ortools>=9.11",
     "rendercv[full]>=2.0",
     "python-docx>=1.1",
+    "phonenumbers>=8.13",
 ]
 
 [project.scripts]

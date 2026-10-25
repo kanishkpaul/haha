@@ -8,11 +8,14 @@ and every line range sits inside the record the bank was built from.
 
 `tailor run` stops at two gates, the plan and the final check. An approval is
 stored in `approvals.json` with a hash of the files it covers, so a changed
-plan or page needs approving again.
+plan or page needs approving again. `status` says where an application stands
+and what to do next.
 """
 
 import hashlib
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -134,3 +137,46 @@ def approve(folder: Path, gate: str, now: datetime | None = None) -> dict:
         data.pop("final", None)  # a new plan means a new page
     (folder / APPROVALS_FILE).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return record
+
+
+STAGES = [  # file that ends the stage, stage name, what to do while it's missing
+    ("jobspec.json", "job spec", "fill jobspec.json from work/jobspec.prompt.md"),
+    ("match.json", "match", "fill match.json from work/match.prompt.md"),
+    ("selection.json", "plan", "tailor run {name}"),
+    ("plan", "gate 1", "review plan.md and gap_report.md, then tailor run {name} --approve"),
+    ("draft.json", "write", "fill draft.json from work/write.prompt.md"),
+    ("review.json", "review", "fill review.json from work/verify.prompt.md"),
+    ("final", "gate 2", "review check_report.md and the PDF, then tailor run {name} --approve"),
+]
+
+
+@dataclass
+class Status:
+    folder: Path
+    stage: str  # a stage name from STAGES, or "ready"
+    next: str
+    grade: str = ""
+    ats_score: float | None = None
+
+
+def status(folder: Path, name: str = "") -> Status:
+    """Where an application stands: the first stage whose file or approval is missing, and what to do.
+    `name` is how the next command should refer to the folder (a unique prefix reads better)."""
+    pending = next(((stage, todo) for done, stage, todo in STAGES
+                    if not (approved(folder, done) if done in GATES else (folder / done).is_file())), None)  # fmt: skip
+    stage, todo = pending or ("ready", "send " + next((p.name for p in folder.glob("*.pdf")), "the PDF"))
+    report = folder / "check_report.md"
+    grade = re.search(r"screener grade: \*\*(\w)\*\*", report.read_text(encoding="utf-8")) if report.is_file() else None
+    score = folder / "ats_score.json"
+    ats_score = json.loads(score.read_text(encoding="utf-8")).get("overall_score") if score.is_file() else None
+    return Status(folder, stage, todo.format(name=name or folder.name), grade.group(1) if grade else "", ats_score)
+
+
+def short_names(folders: list[Path]) -> dict[Path, str]:
+    """The fewest leading words of each folder name that no other folder name starts with."""
+    out = {}
+    for f in folders:
+        words = f.name.split("-")
+        prefixes = ["-".join(words[:n]) for n in range(1, len(words) + 1)]
+        out[f] = next((x for x in prefixes if not any(g != f and g.name.startswith(x) for g in folders)), f.name)
+    return out
