@@ -293,6 +293,17 @@ class PdfLayout:
             out += piece if out.endswith(("-", "/")) else (" " + piece if out else piece)
         return out
 
+    def plain(self) -> str:
+        """The page as plain text, one PDF line per row and a blank row between pages, for the .txt copy."""
+        rows, page = [], 0
+        for line in sorted(self.lines, key=lambda x: (x.page, -round(x.top), x.left)):
+            if line.page != page:
+                rows.append("")
+                page = line.page
+            text = line.text.strip()
+            rows.append("- " + text[1:].strip() if text.startswith("•") else text)
+        return "\n".join(rows) + "\n"
+
     def fill(self, margin_in: float) -> float:
         """How much of the last page's text area is used, from 0 to 1."""
         last = [x for x in self.lines if x.page == self.pages - 1]

@@ -91,6 +91,12 @@ def test_pdf_text_reads_in_order_and_joins_hyphenated_breaks():
     assert slash.text() == "PyTorch/Hugging Face models"
 
 
+def test_plain_text_keeps_rows_and_pages():
+    lay = layout((0, 700, 690, 36, "• Kept 98.9%"), (0, 720, 710, 36, "Jadavpur University"), (1, 750, 740, 36, "p2"),
+                 pages=2)  # fmt: skip
+    assert lay.plain() == "Jadavpur University\n- Kept 98.9%\n\np2\n"
+
+
 def test_fill_measures_the_last_page():
     lay = layout((0, 750, 740, 36, "a"), (1, 750, 400, 36, "b"), pages=2)
     assert lay.fill(0.5) == pytest.approx((792 - 36 - 400) / (792 - 72))

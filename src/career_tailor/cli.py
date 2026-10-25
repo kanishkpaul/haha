@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from . import (
     annotate,
+    assemble,
     ats,
     bank,
     ingest,
@@ -262,6 +263,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"fit: took {', '.join(fitted.dropped)} off the page to fit; plan and draft updated")
     final = folder / fitted.pdf.name
     final.write_bytes(fitted.pdf.read_bytes())
+    final.with_suffix(".txt").write_text(fitted.layout.plain(), encoding="utf-8")
+    prov = assemble.provenance(b, spec, sel, w)
+    (folder / assemble.PROVENANCE_FILE).write_text(prov.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    checks += assemble.check(prov, sel, p.career_record)
     expected = render.expected_lines(b, sel, w)
     checks += render.extraction_findings(fitted.layout, expected, render.contact_details(b), sel.pages)
     docx = render.write_docx(final.with_suffix(".docx"), b, sel, w, fitted.design)
@@ -299,7 +304,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         if review_path.stat().st_mtime < draft_path.stat().st_mtime:
             print("warning: the draft changed after the review; review it again", file=sys.stderr)
         review_findings = verify.check_review(review, w, spec, sel, verify.page_text(b, spec, sel, w))
-    fit_lines = [*fitted.steps, f"PDF: {final.name}; DOCX: {docx.name}", *ats_lines]
+    traced = sum(len(x.claims) for x in prov.lines)
+    fit_lines = [*fitted.steps, f"PDF: {final.name}; DOCX: {docx.name}; text: {final.with_suffix('.txt').name}",
+                 f"Provenance: {len(prov.lines)} page lines, {traced} claim links -> {assemble.PROVENANCE_FILE}",
+                 *ats_lines]  # fmt: skip
     report = folder / verify.REPORT_FILE
     report.write_text(verify.render_report(spec, w, checks, review, review_findings, fit_lines), encoding="utf-8")
     findings = checks + review_findings

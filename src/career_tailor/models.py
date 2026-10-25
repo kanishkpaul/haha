@@ -416,3 +416,43 @@ class CheckReport(Model):
     @property
     def ok(self) -> bool:
         return not any(f.severity == "error" for f in self.findings)
+
+
+# ---------------------------------------------------------------- assembly
+
+
+class ProofTrace(Model):
+    card: str  # CAREER-043
+    title: str
+    strength: ProofStrength
+    verification: str = ""
+    artifacts: list[ProofArtifact] = Field(default_factory=list)
+
+
+class ClaimTrace(Model):
+    claim_id: str
+    text: str  # as the record words it
+    record_lines: SourceRef | None = None  # None for record updates
+    origin: str = ""  # the record update's source, when not from the record
+    proof: ProofStrength = "none"
+    cards: list[ProofTrace] = Field(default_factory=list)
+
+
+class LineTrace(Model):
+    """One line of the page and what it rests on."""
+
+    section: str  # "Headline", "Education", "Experience", ..., "Skills"
+    entry_id: str = ""
+    text: str
+    source: str = ""  # for lines not written from claims: where the wording comes from
+    claims: list[ClaimTrace] = Field(default_factory=list)
+
+
+class Provenance(Model):
+    """Every line of one application's page traced to the record and the proof behind it (provenance.json)."""
+
+    job: str
+    record_path: str
+    record_sha256: str
+    bank_built_at: str
+    lines: list[LineTrace] = Field(default_factory=list)
