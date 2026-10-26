@@ -132,6 +132,7 @@ haha/                     code only, safe to open-source
 ├── docs/                 workflow guide, build plan, resume research
 ├── vendor/resume-matcher/  Resume-Matcher submodule (agent mode, no API key)
 ├── bin/rm                any Resume-Matcher tool: bin/rm --help
+├── bin/oppterm           open the newest Opportunity Terminal (../outputs/apply_now_*/) in the browser
 └── scripts/              start/stop Resume-Matcher's servers
 
 ../haha-data/             personal data, never committed (HAHA_DATA_DIR)    🙈

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Open the newest Opportunity Terminal (../outputs/apply_now_*/OPPORTUNITY_TERMINAL.html) in the browser.
+# bin/oppterm opens it; bin/oppterm --path prints the file. HAHA_OUTPUTS_DIR overrides ../outputs.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
+OUT="${HAHA_OUTPUTS_DIR:-$(cd "$ROOT/.." && pwd)/outputs}"
+FILE="$(ls -d "$OUT"/apply_now_*/OPPORTUNITY_TERMINAL.html 2>/dev/null | sort | tail -1 || true)"
+if [[ -z "$FILE" ]]; then
+  echo "oppterm: no OPPORTUNITY_TERMINAL.html under $OUT/apply_now_*/" >&2
+  exit 1
+fi
+if [[ "${1:-}" == "--path" ]]; then
+  echo "$FILE"
+  exit 0
+fi
+if command -v open >/dev/null; then open "$FILE"; else xdg-open "$FILE"; fi
+echo "opened $FILE"
