@@ -78,9 +78,10 @@ _LETTER_PLACES = re.compile(
 )
 
 
-# `dense: true` in plan.edits.yaml: about 9 pt type, 0.4 in margins and tighter leading (render.DENSE).
+# `dense: true` in plan.edits.yaml: about 9 pt type, 0.35 in margins and tighter leading (render.DENSE).
 # Rough scale against the default design; the fit loop measures the real page and corrects it.
-DENSE_LINES, DENSE_CHARS, DENSE_SKILL_LINES = 1.2, 1.12, 5.0
+# Characters: a full dense line measured 135-149 at 8.5-9 pt (8 Nov 2026), so 1.35 x 96 = 130 stays under it.
+DENSE_LINES, DENSE_CHARS, DENSE_SKILL_LINES = 1.2, 1.35, 5.0
 
 
 def layout_for(paper: str, edits: PlanEdits | None = None, lines_per_page: float | None = None) -> Layout:
