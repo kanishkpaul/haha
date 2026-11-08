@@ -34,6 +34,16 @@ def test_layout_budget():
     assert selection.LAYOUTS["a4"].budget(2) == 120
 
 
+def test_dense_layout_fits_more_per_line_and_page():
+    plain, dense = selection.layout_for("a4", PlanEdits()), selection.layout_for("a4", PlanEdits(dense=True))
+    assert plain == selection.LAYOUTS["a4"]
+    assert dense.chars_per_line > plain.chars_per_line and dense.lines_per_page > plain.lines_per_page
+    assert dense.skills > plain.skills  # the dense page carries a fuller skills block
+    assert selection.layout_for("a4", PlanEdits(dense=True), lines_per_page=50).lines_per_page == 50
+
+
+
+
 def test_entries_sharing_a_proof_card_exclude_each_other(mini_bank):
     for entry_id in ("EXP-01", "RES-01"):
         for claim in mini_bank.entries[entry_id].claims:
@@ -157,3 +167,10 @@ def test_pages_override_and_determinism(mini_bank):
     two = selection.solve(mini_bank, SPEC, MATCH, PlanEdits(pages=2))
     assert two.pages == 2 and two.lines_budget == 120
     assert selection.solve(mini_bank, SPEC, MATCH) == selection.solve(mini_bank, SPEC, MATCH)
+
+
+def test_dense_plan_has_a_bigger_budget_and_looser_limits(mini_bank):
+    plain = selection.solve(mini_bank, SPEC, MATCH, PlanEdits())
+    dense = selection.solve(mini_bank, SPEC, MATCH, PlanEdits(dense=True))
+    assert dense.lines_budget > plain.lines_budget and dense.edits.dense
+    assert len(dense.picks) >= len(plain.picks)

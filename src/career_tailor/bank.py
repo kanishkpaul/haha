@@ -24,7 +24,15 @@ from pathlib import Path
 import yaml
 
 from . import record as record_mod
-from .annotate import ARCHIVE_SECTION, add_extra_claims, apply_annotations, apply_proof_overrides, load_annotations, tag
+from .annotate import (
+    ARCHIVE_SECTION,
+    COMMUNICATION_SECTION,
+    add_extra_claims,
+    apply_annotations,
+    apply_proof_overrides,
+    load_annotations,
+    tag,
+)
 from .extract import extract, load_updates
 from .models import BankManifest, Entry, MetricRow, Profile, ProofArtifact, ProofCard, Repo, SkillArea, Track
 from .paths import Paths
@@ -142,8 +150,11 @@ def compile_bank(p: Paths) -> Bank:
     record_sha = sha256(p.career_record)
     profile, entries, notes = extract(rec, load_updates(p.record_updates))
     annotations = load_annotations(p.annotations)
-    archive = rec.section(ARCHIVE_SECTION)
-    archive_lines = [(no, rec.line(no)) for no in range(archive.line, archive.end + 1)] if archive else []
+    archive_lines = []
+    for number in (ARCHIVE_SECTION, COMMUNICATION_SECTION):  # verbatim lines an overlay may promote to claims
+        section = rec.section(number)
+        if section:
+            archive_lines += [(no, rec.line(no), number) for no in range(section.line, section.end + 1)]
     notes["problems"] += add_extra_claims(entries, annotations, archive_lines)
     tables = read_tables(rec)
     attach_metrics(entries)

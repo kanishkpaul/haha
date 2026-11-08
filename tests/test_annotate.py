@@ -62,7 +62,9 @@ def test_annotations_override_and_survive_rebuild(data_dir):
     assert e.claims[0].skills == ["leadership"]
     assert not e.claims[1].show_on_resume
     assert e.same_work == ["AWD-02"]
-    assert bank.load(p.bank).entries["LEAD-02"].dates.display == "Mar 2029 – Dec 2029"
+    dates = bank.load(p.bank).entries["LEAD-02"].dates
+    # the renderer reads start/end, so the override has to reach them, not only the display string
+    assert (dates.display, dates.start, dates.end) == ("Mar 2029 – Dec 2029", "2029-03", "2029-12")
     assert not [n for n in built.notes["problems"] if n.startswith("annotation")]
 
 

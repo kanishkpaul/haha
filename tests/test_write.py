@@ -265,3 +265,13 @@ def test_posting_terms_split_by_requirement_kind():
         R2.model_copy(update={"kind": "preferred", "keywords": ["evaluation", "browser agents"]}),
     ]})  # fmt: skip
     assert write.posting_terms(spec) == {"required": ["evaluation"], "preferred": ["browser agents"], "other": []}
+
+
+def test_no_grade_ever_reaches_the_page():
+    """Kanishk's rule (27 Oct 2026): a CGPA, GPA or grade never appears on a resume."""
+    from career_tailor.write import GRADE_WORDS
+
+    for text in ("CGPA 6.0/10 (semesters 1–6)", "GPA 3.8", "scored 8.5/10 overall", "grade point average"):
+        assert GRADE_WORDS.search(text), text
+    for text in ("Expected graduation June 2027", "8/10 fixture tasks completed", "54/55 convulsive seizures"):
+        assert not GRADE_WORDS.search(text), text

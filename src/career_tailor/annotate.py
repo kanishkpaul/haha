@@ -14,6 +14,7 @@ from pathlib import Path
 
 import yaml
 
+from .extract import parse_dates
 from .models import TRUTH_RULE, Annotation, Claim, DateRange, Entry, ProofCard, SkillArea, SourceRef
 from .textutil import md_plain
 
@@ -74,13 +75,14 @@ def load_annotations(directory: Path) -> list[Annotation]:
 
 
 ARCHIVE_SECTION = 17  # the original megadoc: the full personal account behind the cards' shorter rows
+COMMUNICATION_SECTION = 10  # writing, technical communication and essays: no entry of their own
 
 
 def _plain(text: str) -> str:
     return md_plain(text.replace("\\", ""))
 
 
-def add_extra_claims(entries: list[Entry], annotations: list[Annotation], archive: list[tuple[int, str]] = ()
+def add_extra_claims(entries: list[Entry], annotations: list[Annotation], archive: list[tuple] = ()
                      ) -> list[str]:  # fmt: skip
     """Promote verbatim note or field sentences, and verbatim sentences from the megadoc (`archive`: its
     numbered lines), to claims. Runs before metrics, conditions, tagging and proof links, so promoted claims
@@ -99,13 +101,14 @@ def add_extra_claims(entries: list[Entry], annotations: list[Annotation], archiv
             entry.claims.append(Claim(id=f"{entry.id}.n{n}", entry_id=entry.id, kind="fact", text=text,
                                       label="from notes", source=entry.source))  # fmt: skip
         for n, text in enumerate(a.archive_claims, start=1):
-            line = next((no for no, raw in archive if _plain(text) in _plain(raw)), None)
+            hit = next((row for row in archive if _plain(text) in _plain(row[1])), None)
+            line, section = (hit[0], hit[2] if len(hit) > 2 else ARCHIVE_SECTION) if hit else (None, None)
             if line is None:
                 problems.append(f"annotation {a.entry_id}: archive claim is not verbatim from section "
-                                f"{ARCHIVE_SECTION}: {text[:60]}")  # fmt: skip
+                                f"{ARCHIVE_SECTION} or {COMMUNICATION_SECTION}: {text[:60]}")  # fmt: skip
                 continue
             entry.claims.append(Claim(id=f"{entry.id}.a{n}", entry_id=entry.id, kind="fact", text=_plain(text),
-                                      label=f"from section {ARCHIVE_SECTION}",
+                                      label=f"from section {section}",
                                       source=SourceRef(line_start=line, line_end=line)))  # fmt: skip
     return problems
 
@@ -127,6 +130,9 @@ def apply_annotations(entries: list[Entry], annotations: list[Annotation]) -> li
         if a.dates_display:
             entry.dates = entry.dates or DateRange(raw=a.dates_display)
             entry.dates.display = a.dates_display
+            parsed = parse_dates(a.dates_display)  # the renderer and planner read start/end, not the display
+            if parsed.start:
+                entry.dates.start, entry.dates.end = parsed.start, parsed.end
         if a.skills:
             entry.skills = list(a.skills)
         if a.tracks:

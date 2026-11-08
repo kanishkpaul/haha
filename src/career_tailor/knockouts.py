@@ -23,8 +23,14 @@ _COUNTRIES = {
     "EU": r"\b(eu|european union|europe)\b", "Canada": r"\bcanada\b", "India": r"\bindia\b",
     "Singapore": r"\bsingapore\b", "Australia": r"\baustralia\b",
 }  # fmt: skip
-_YEARS = re.compile(r"(\d+)\s*\+?\s*(?:-\s*\d+\s*)?(?:years|yrs)", re.I)
+_YEARS = re.compile(r"(\d+)\s*\+?\s*(?:(?:[-\u2013\u2014]|to)\s*\d+\s*)?(?:years|yrs)", re.I)  # "2–5 years" means 2
 _EQUIVALENT = re.compile(r"equivalent|or similar|or related|self-taught|no formal|don't require|do not require", re.I)
+# For degrees, "or equivalent" counts only next to the degree or with "experience": in "PhD in NLP, CV, or equivalent"
+# it names an equivalent field, not an equivalent to the PhD.
+_DEGREE_EQUIVALENT = re.compile(r"equivalent (?:\w+ ){0,2}experience|experience equivalent|"
+                                r"self-taught|no formal|don't require|do not require|"
+                                r"(?:ph\.?d|doctorate|master'?s|m\.?s\.?c?|m\.?tech|degree)"
+                                r"\.?\s*(?:degree\s*)?,?\s*or (?:an? )?equivalent", re.I)
 
 
 def load_candidate(path: Path) -> Candidate | None:
@@ -33,14 +39,25 @@ def load_candidate(path: Path) -> Candidate | None:
     return Candidate.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
+_SPONSOR_SILENT = re.compile(r"(?:nothing|silent|no mention|doesn't mention|does not mention|not mention)\w*"
+                             r"\s+(?:\w+\s+){0,3}(?:visa|sponsor)", re.I)  # a note that the posting is silent
+
+
 def sponsorship(text: str) -> str:
     """What the posting says about visa sponsorship: "offered", "not offered", or "not stated"."""
+    text = _SPONSOR_SILENT.sub(" ", text)
     if _SPONSOR_NO.search(text):
         return "not offered"
     if _SPONSOR_YES.search(text):
         return "offered"
     return "not stated"
 
+
+
+_CITIES = {  # cities that place a posting in the candidate's own country
+    "India": ("bengaluru", "bangalore", "mumbai", "hyderabad", "pune", "delhi", "new delhi", "gurugram", "gurgaon",
+              "noida", "chennai", "kolkata", "ahmedabad", "jaipur", "kochi", "indore", "chandigarh"),
+}
 
 def _countries(text: str) -> list[str]:
     return [name for name, pattern in _COUNTRIES.items() if re.search(pattern, text, re.I)]
@@ -65,6 +82,10 @@ def judge(quote: str, category: str, candidate: Candidate, visa: str) -> tuple[s
             return "pass", f"located in {candidate.location}"
         if candidate.open_to_relocation is False:
             return "blocker", f"requires presence away from {candidate.location}; you're not relocating"
+        cities = _CITIES.get(candidate.country, ())
+        if any(re.search(rf"\b{c}\b", q) for c in cities):  # same country: a move, never a visa
+            reloc = "relocation undecided" if candidate.open_to_relocation is None else "open to relocation"
+            return "condition", f"requires moving within {candidate.country} ({reloc}; no visa needed)"
         reloc = "relocation undecided" if candidate.open_to_relocation is None else "open to relocation"
         visa_note = {
             "offered": "sponsors visas",
@@ -74,15 +95,18 @@ def judge(quote: str, category: str, candidate: Candidate, visa: str) -> tuple[s
         status = "blocker" if visa == "not offered" else "condition"
         return status, f"requires on-site presence away from {candidate.location} ({reloc}; posting {visa_note})"
     if category == "education":
-        if re.search(r"\b(ph\.?d|doctor)", q) and candidate.degree_level != "phd":
-            if _EQUIVALENT.search(q):
+        # "Bachelor's, Master's, or Ph.D." lists alternatives; a bachelor's option means no higher degree is required
+        bachelors_ok = re.search(r"\b(bachelor|b\.?tech|b\.?e\b|b\.?sc?\b|undergrad)", q)
+        if not bachelors_ok and re.search(r"\b(ph\.?d|doctor)", q) and candidate.degree_level != "phd":
+            if _DEGREE_EQUIVALENT.search(q):
                 return "condition", "asks for a PhD or equivalent experience; argue equivalence from research work"
             return "blocker", "requires a PhD"
-        if re.search(r"\b(master|m\.?s\.?c?\b|m\.?tech|graduate degree)", q) and candidate.degree_level in (
+        masters = re.search(r"\b(master|m\.?s\.?c?\b|m\.?tech|graduate degree)", q)
+        if not bachelors_ok and masters and candidate.degree_level in (
             "none",
             "bachelor",
         ):
-            if _EQUIVALENT.search(q):
+            if _DEGREE_EQUIVALENT.search(q):
                 return "condition", "asks for a master's or equivalent experience"
             return "blocker", "requires a master's degree"
         if candidate.degree_status == "in progress":

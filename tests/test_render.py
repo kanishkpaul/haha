@@ -145,6 +145,14 @@ def test_fit_tightens_then_drops_written_bullets_on_overflow(mini_bank, sel, dra
     assert not kept & set(fitted.dropped)
 
 
+def test_dense_fit_starts_small_and_never_calibrates(mini_bank, sel, draft, tmp_path):
+    fitted = render.fit(tmp_path, mini_bank, SPEC, MATCH, sel, draft, selection.PlanEdits(dense=True),
+                        today=FIXTURE_TODAY)  # fmt: skip
+    assert render.DENSE_FONT[0] <= fitted.design.font_size <= render.DENSE_FONT[1]
+    assert fitted.design.margin == render.DENSE.margin
+    assert fitted.measured_lines_per_page is None  # calibration is for the default design only
+
+
 def test_calibration_is_a_mean_over_jobs(tmp_path):
     path = tmp_path / render.CALIBRATION_FILE
     render.save_calibration(path, "letter", 46.0, "job:a")
@@ -246,3 +254,18 @@ def test_score_warns_on_required_terms_missing_from_the_page(monkeypatch, mini_b
 def test_resume_matcher_scores_a_draft(mini_bank, sel, draft):
     result, _ = ats.score(SCORED, mini_bank, sel, draft)
     assert 0 <= result["overall_score"] <= 100 and "keyword_match" in result["sub_scores"]
+
+
+def test_a_bare_year_is_not_shown_as_january():
+    from types import SimpleNamespace as NS
+
+    one_year = NS(dates=NS(start="2026", end="2026"))
+    assert render._dates(one_year) == {"date": 2026}  # the string "2026" renders as "Jan 2026"
+    span = NS(dates=NS(start="2025", end="2026-04"))
+    assert render._dates(span) == {"start_date": 2025, "end_date": "2026-04"}
+
+
+def test_em_dashes_become_hyphens_on_the_page():
+    data = {"cv": {"name": "A — B", "sections": {"x": [{"name": "Sefai — Rust", "highlights": ["a — b"]}]}}}
+    assert "—" not in str(render._hyphens(data))
+    assert render._hyphens("Sefai — Rust") == "Sefai - Rust"

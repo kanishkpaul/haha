@@ -77,6 +77,26 @@ _LETTER_PLACES = re.compile(
 )
 
 
+# `dense: true` in plan.edits.yaml: about 9 pt type, 0.4 in margins and tighter leading (render.DENSE).
+# Rough scale against the default design; the fit loop measures the real page and corrects it.
+DENSE_LINES, DENSE_CHARS, DENSE_SKILL_LINES = 1.2, 1.12, 5.0
+
+
+def layout_for(paper: str, edits: PlanEdits | None = None, lines_per_page: float | None = None) -> Layout:
+    """The page model for this paper and these edits. `lines_per_page` is a measured value and wins."""
+    layout = LAYOUTS[paper]
+    if edits is not None and edits.dense:
+        layout = replace(
+            layout,
+            lines_per_page=round(layout.lines_per_page * DENSE_LINES, 2),
+            chars_per_line=round(layout.chars_per_line * DENSE_CHARS),
+            skills=DENSE_SKILL_LINES,
+        )
+    if lines_per_page:
+        layout = replace(layout, lines_per_page=lines_per_page)
+    return layout
+
+
 def paper_for(spec: JobSpec) -> str:
     """Letter when the first listed location is in the US or Canada, A4 otherwise."""
     first = re.split(r"[;&|/]| or ", spec.location or "")[0]
@@ -113,6 +133,9 @@ def _side(bank: Bank, ref: str, pool: dict[str, Claim]) -> Side:
     return tuple(c.id for c in bank.entries[ref].claims if c.id in pool)
 
 
+
+PORTFOLIO_LABEL = "from section 10"  # annotate.COMMUNICATION_SECTION
+
 def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
     """Pairs of claim sets that must not both appear, with the reason."""
     pool = {c.id: c for _, c in eligible(bank)}
@@ -130,6 +153,8 @@ def exclusions(bank: Bank) -> list[tuple[Side, Side, str]]:
     # (two placements can share one source). An entry stands whole when every claim cites the card.
     citing: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for claim in pool.values():
+        if claim.label == PORTFOLIO_LABEL:
+            continue  # a communication line (record section 10) cites every project it summarises; it is not their twin
         for card in claim.evidence_ids:
             citing[card][claim.entry_id].append(claim.id)
     for card, by_entry in citing.items():
@@ -230,10 +255,11 @@ def solve(
     edits = edits or PlanEdits()
     pages = edits.pages or spec.pages
     paper = paper_for(spec)
-    layout = LAYOUTS[paper]
-    if lines_per_page:
-        layout = replace(layout, lines_per_page=lines_per_page)
+    layout = layout_for(paper, edits, lines_per_page)
     rules = Rules.for_pages(pages)
+    if edits.dense:  # a fuller page carries more projects and one more award line
+        rules = replace(rules, projects=(rules.projects[0], rules.projects[1] + 2),
+                        awards=(rules.awards[0], rules.awards[1] + 1))  # fmt: skip
     pool = [(e, c) for e, c in eligible(bank) if e.kind != "education"]
     claims = {c.id: c for _, c in pool}
     entries = {e.id: e for e, _ in pool}
@@ -447,10 +473,11 @@ def render_plan(bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> str:
     if lost:
         changes = "; ".join(f"{r} {reqs[r].text} ({verdict[r]} → {sel.covered[r]})" for r in lost)
         lines += [f"Lost to the page budget or your edits: {changes}.", ""]
-    if sel.edits.pin or sel.edits.ban or sel.edits.pages:
+    if sel.edits.pin or sel.edits.ban or sel.edits.pages or sel.edits.dense:
         applied = [f"pinned {', '.join(sel.edits.pin)}" if sel.edits.pin else "",
                    f"banned {', '.join(sel.edits.ban)}" if sel.edits.ban else "",
-                   f"{sel.edits.pages} {page}" if sel.edits.pages else ""]  # fmt: skip
+                   f"{sel.edits.pages} {page}" if sel.edits.pages else "",
+                   "dense layout" if sel.edits.dense else ""]  # fmt: skip
         lines += ["Edits applied: " + "; ".join(a for a in applied if a) + ".", ""]
     edu = bank.entries.get("EDU-01")
     if edu:
@@ -465,7 +492,7 @@ def render_plan(bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> str:
             lines += [f"## {section}", ""]
         one_line = entry.kind in ONE_LINE_KINDS
         if not one_line:
-            team = " (team work)" if entry.team else ""
+            team = f" ({entry.team_label})" if entry.team else ""
             lines += [f"### {entry_label(entry)}{team}", ""]
         for cid in pick.claim_ids:
             claim = bank.claim(cid)

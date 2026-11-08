@@ -87,9 +87,15 @@ def _dates(entry) -> dict:
     start, end = _date(entry.dates.start), _date(entry.dates.end)
     if end == "present" and start and start > date.today().strftime("%Y-%m"):
         end = None  # RenderCV checks "present" against the real date and refuses a later start; show the start
+    start, end = _year(start), _year(end)
     if start and end and start != end:
         return {"start_date": start, "end_date": end}
     return {"date": start or end} if (start or end) else {}
+
+
+def _year(value: str | None) -> str | int | None:
+    """RenderCV reads the string "2026" as January 2026; a bare year has to go in as an int."""
+    return int(value) if value and re.fullmatch(r"\d{4}", value) else value
 
 
 def _username(field: str, host: str) -> str | None:
@@ -246,8 +252,20 @@ def pdf_name(bank: Bank) -> str:
     return re.sub(r"\W+", "_", bank.profile.name).strip("_") + "_Resume.pdf"
 
 
+def _hyphens(value):
+    """Kanishk, 29 Oct 2026: no em dashes anywhere on the page; a normal hyphen instead."""
+    if isinstance(value, str):
+        return value.replace("\u2014", "-")
+    if isinstance(value, dict):
+        return {k: _hyphens(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_hyphens(v) for v in value]
+    return value
+
+
 def render_pdf(folder: Path, data: dict, name: str) -> Path:
     """Write the RenderCV input and typeset it. Returns the PDF path."""
+    data = _hyphens(data)
     out = folder / RENDER_DIR
     out.mkdir(parents=True, exist_ok=True)
     source = out / YAML_FILE
@@ -379,6 +397,9 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
 # ---------------------------------------------------------------- fit loop
 
 FONT_MIN, FONT_MAX = 9.5, 10.5
+# `dense: true` in plan.edits.yaml: a fuller page in the manner of a hand-set LaTeX resume
+DENSE = Design(font_size=9.0, line_spacing=0.5, margin=0.4, section_space=0.25, entry_space=0.15, bullet_space=0.03)
+DENSE_FONT = (8.5, 9.5)
 FILL_MIN = 0.7  # the last page should be at least this full
 CALIBRATION_FILE = "calibration.yaml"
 
@@ -407,7 +428,8 @@ def _trim(w: Writing, sel: Selection) -> Writing:
 
 def fit(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, w: Writing, edits: PlanEdits,
         today: date | None = None, max_renders: int = 12) -> Fit:  # fmt: skip
-    design, steps, dropped, measured = Design(), [], [], None
+    design, steps, dropped, measured = (DENSE if edits.dense else Design()), [], [], None
+    font_min, font_max = DENSE_FONT if edits.dense else (FONT_MIN, FONT_MAX)
     written = {c for b in w.bullets for c in b.claim_ids}
     name = pdf_name(bank)
     direction = 0  # the way the design last moved, so it never swings back and forth
@@ -418,7 +440,7 @@ def fit(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, w: Wr
         if design == Design() and measured is None:
             measured = sel.lines_used / used if used else None
         if layout.pages > sel.pages:
-            if design.font_size > FONT_MIN:
+            if design.font_size > font_min:
                 design, direction = design.step(-1), -1
                 steps.append(f"{layout.pages} pages: tightened to {design.font_size:g} pt")
                 continue
@@ -436,7 +458,7 @@ def fit(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, w: Wr
                          f"per page, dropping {', '.join(gone)}")  # fmt: skip
             continue
         fill = layout.fill(design.margin)
-        if layout.pages == sel.pages and fill < FILL_MIN and design.font_size < FONT_MAX and direction >= 0:
+        if layout.pages == sel.pages and fill < FILL_MIN and design.font_size < font_max and direction >= 0:
             design, direction = design.step(+1), +1
             steps.append(f"last page {fill:.0%} full: loosened to {design.font_size:g} pt")
             continue
@@ -530,6 +552,9 @@ def write_docx(path: Path, bank: Bank, sel: Selection, w: Writing, design: Desig
         heading("Skills")
         for group, terms in w.skills.items():
             line(", ".join(terms), bold=f"{group}: ")
+    for para in doc.paragraphs:
+        for run in para.runs:
+            run.text = run.text.replace("\u2014", "-")
     doc.save(path)
     return path
 

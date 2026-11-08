@@ -150,6 +150,16 @@ class Entry(Model):
         return next(c for c in self.claims if c.id == claim_id)
 
 
+
+    @property
+    def team_label(self) -> str:
+        """How prompts and plans tag this entry's credit: "team work", "mixed team credit" for a catalog whose
+        team note names only some rows (each row's credit is in that note), or ""."""
+        if not self.team:
+            return ""
+        mixed = self.notes.get("Team credit", "").startswith("Mixed")
+        return "mixed team credit, see the team note" if mixed else "team work"
+
 class Annotation(Model):
     """Reviewed overlay for one entry. Lists replace the parsed value when non-empty."""
 
@@ -356,6 +366,7 @@ class PlanEdits(Model):
     pin: list[str] = Field(default_factory=list)
     ban: list[str] = Field(default_factory=list)
     pages: int | None = Field(default=None, ge=1, le=3)
+    dense: bool = False  # smaller type and margins, more lines and a fuller skills block (e.g. a profile resume)
 
 
 class Pick(Model):

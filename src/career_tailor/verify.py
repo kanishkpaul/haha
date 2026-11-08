@@ -146,7 +146,9 @@ def lint(w: Writing, bank: Bank, spec: JobSpec, sel: Selection) -> list[Finding]
                 for b in bullets:
                     if not re.search(r"\bteam\b", b.text, re.I):
                         add("team", "error", f"{_label(b)}: a team result must say it is a team's", b.text)
-            elif not _TEAM.search(entry.subtitle) and not any(_TEAM.search(b.text) for b in bullets):
+            elif entry.team_label == "team work" and not _TEAM.search(entry.subtitle) and not any(
+                _TEAM.search(b.text) for b in bullets
+            ):
                 add("team", "warning", f"{entry.id} is team work, but no bullet or the role says so")
     for b in w.bullets:
         text = md_plain(b.text)
@@ -255,7 +257,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, sel: Selection, w: Writi
         entry = bank.entries[b.entry_id]
         claims = [bank.claim(c) for c in b.claim_ids]
         lines = [
-            f"### {_label(b)} · {entry.name}" + (" (team work)" if entry.team else ""),
+            f"### {_label(b)} · {entry.name}" + (f" ({entry.team_label})" if entry.team else ""),
             "",
             f"Bullet: {b.text}",
             "",

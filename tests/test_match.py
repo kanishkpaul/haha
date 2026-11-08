@@ -300,7 +300,7 @@ def test_cli_plan_rejects_an_ungrounded_match(data_dir, capsys):
 @pytest.mark.local
 def test_real_bank_retrieval_on_a_saved_spec():
     p = paths.load()
-    folder = next(iter(sorted(p.applications.glob("anthropic-*/jobspec.json"))), None)
+    folder = next(iter(sorted(p.applications.glob("anthropic-*post-training-model-evaluations*/jobspec.json"))), None)
     if folder is None:
         pytest.skip("no Anthropic application folder")
     s = JobSpec.model_validate_json(folder.read_text())

@@ -167,7 +167,10 @@ def cmd_plan(args: argparse.Namespace) -> int:
     try:
         edits = selection.load_edits(folder)
         calibration = render.load_calibration(p.data / render.CALIBRATION_FILE)
-        sel = selection.solve(b, spec, m, edits, lines_per_page=calibration.get(selection.paper_for(spec)))
+        measured = calibration.get(selection.paper_for(spec))  # lines per page at the default design
+        if measured and edits.dense:
+            measured *= selection.DENSE_LINES
+        sel = selection.solve(b, spec, m, edits, lines_per_page=measured)
     except (ValidationError, selection.SelectionError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

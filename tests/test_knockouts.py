@@ -20,6 +20,7 @@ ADA = Candidate(location="Springfield, Example State", country="Exampleland", au
         ("We are unable to sponsor visas for this role.", "not offered"),
         ("Must be authorized to work in the US without sponsorship.", "not offered"),
         ("Hybrid in London.", "not stated"),
+        ("(The posting says nothing about visa sponsorship or remote work.)", "not stated"),
     ],
 )
 def test_sponsorship(text, expected):
@@ -41,6 +42,8 @@ def test_sponsorship(text, expected):
         ("PhD or equivalent research experience", "education", "offered", "condition"),
         ("MS in Computer Science", "education", "offered", "blocker"),
         ("Bachelor's degree in CS", "education", "offered", "condition"),
+        ("Final year of a Bachelor's, Master's, or Ph.D. degree in CS", "education", "offered", "condition"),
+        ("2–5 years of backend experience", "experience", "offered", "blocker"),
         ("5+ years of industry experience", "experience", "offered", "blocker"),
         ("3+ years of research experience or equivalent", "experience", "offered", "condition"),
         ("experience shipping production code", "experience", "offered", "check"),
@@ -124,3 +127,33 @@ def test_real_database_knows_the_apollo_posting():
     match = opportunities.find(paths.load().outputs,
                                ["https://jobs.lever.co/apolloresearch/4a65c6e1-785a-4f88-8998-a97574afb7ee"])  # fmt: skip
     assert match.id == "AIO-00526" and match.organization == "Apollo Research" and match.cls == "APPLY_NOW"
+
+
+def test_year_ranges_use_the_lower_bound():
+    from career_tailor.knockouts import _YEARS
+
+    for text in ("2-5 years", "2–5 years", "2 — 5 years", "2 to 5 yrs", "2+ years"):
+        assert _YEARS.search(text).group(1) == "2", text
+
+
+
+def test_a_move_within_the_candidates_country_is_not_a_visa_blocker():
+    kolkata = Candidate(location="Kolkata, West Bengal, India", country="India", authorized_to_work_in=["India"],
+                        open_to_relocation=True)
+    status, note = knockouts.judge("Office in Bengaluru, 5 days a week", "location", kolkata, "not offered")
+    assert status == "condition" and "no visa" in note
+
+
+@pytest.mark.parametrize(
+    ("quote", "status"),
+    [
+        ("Currently has or is in the process of obtaining a PhD degree in the field of Natural Language Processing, "
+         "Speech Processing, Computer Vision, Machine Learning, Artificial Intelligence, or equivalent", "blocker"),
+        ("PhD or equivalent", "condition"),
+        ("PhD degree or equivalent practical experience", "condition"),
+        ("Master's degree in Statistics, Mathematics, or a related field", "blocker"),
+        ("Master's degree or equivalent", "condition"),
+    ],
+)
+def test_or_equivalent_after_a_field_list_names_a_field_not_a_degree(quote, status):
+    assert knockouts.judge(quote, "education", ADA, "offered")[0] == status

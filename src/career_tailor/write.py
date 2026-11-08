@@ -14,6 +14,7 @@ ownership words, banned phrases, drift from the sources, headline and skills.
 The full fact check against the bank is the next stage's job.
 """
 
+import difflib
 import json
 import re
 from collections import Counter
@@ -62,7 +63,16 @@ def _github_owner(bank: Bank) -> str:
 def entry_link(bank: Bank, entry: Entry) -> str:
     """A public repository of the candidate's own for the entry heading, as plain text, or nothing."""
     owner = _github_owner(bank)
-    for url in entry.public_links:
+    # Only shown claims of this entry speak for its heading: not hidden rows (an earlier version of another project)
+    # and not communication lines (record section 10), which cite many projects. A catalog whose rows point at
+    # different repos (ENG-13, ENG-14) gets no link.
+    own = [c for c in entry.claims if c.show_on_resume and c.label != "from section 10"]
+    if any(c.public_links for c in entry.claims):
+        linked = {tuple(c.public_links) for c in own if c.public_links}
+        urls = list(next(iter(linked))) if len(linked) == 1 else []
+    else:
+        urls = entry.public_links
+    for url in urls:
         found = re.match(r"https?://(?:www\.)?github\.com/([\w.-]+)/([\w.-]+)/?$", url)
         if owner and found and found.group(1).lower() == owner:
             return f"github.com/{found.group(1)}/{found.group(2)}"
@@ -81,9 +91,18 @@ def education_lines(bank: Bank) -> list[str]:
     expected = next((md_plain(c.text) for c in current if "expected graduation" in c.text.lower()), "")
     expected = expected.split(";")[-1].strip()
     expected = expected[:1].upper() + expected[1:]
-    grades = [md_plain(c.text) for c in current if c.kind == "update"]
-    second = "; ".join(x for x in [expected, *grades] if x)
+    # Kanishk's rule (27 Oct 2026): no CGPA, GPA or grade ever appears on a resume
+    expected = "" if GRADE_WORDS.search(expected) else expected
+    # the specialisation (security roles ask for it); "IoT" keeps the line from wrapping
+    spec = edu.subtitle.split(" — ")[1] if " — " in edu.subtitle else ""
+    spec = spec.replace("Internet of Things", "IoT")
+    second = "; ".join(x for x in [f"Specialization: {spec}" if spec else "", expected[:1].lower() + expected[1:]] if x)
+    second = second[:1].upper() + second[1:]
     return [first, second] if second else [first]
+
+
+# a decimal score out of 10 is a grade; "8/10 tasks" is a metric
+GRADE_WORDS = re.compile(r"\b(?:c?gpa|grade point|percentage)\b|\b\d\.\d+\s*/\s*10\b", re.IGNORECASE)
 
 
 def suggested_skills(bank: Bank, sel: Selection) -> dict[str, list[str]]:
@@ -266,7 +285,7 @@ def posting_terms(spec: JobSpec) -> dict[str, list[str]]:
 
 
 def write_pack(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, record_text: str) -> Path:
-    layout = sel_mod.LAYOUTS[sel.paper]
+    layout = sel_mod.layout_for(sel.paper, sel.edits)
     reqs = {r.id: r for r in spec.requirements}
     supports: dict[str, list[str]] = {}
     for cov in m.coverage:
@@ -336,8 +355,9 @@ def _ownership(text: str) -> set[str]:
 
 def sources(bank: Bank, entry: Entry, claims: list[Claim]) -> str:
     """Everything a bullet may draw facts from: its claims with their labels, details and conditions,
-    plus the entry's heading, dates and team-credit note."""
-    parts = [entry.name, entry.subtitle, entry.dates.raw if entry.dates else "", entry.notes.get("Team credit", "")]
+    plus the entry's heading, dates, record-listed stack and team-credit note."""
+    parts = [entry.name, entry.subtitle, entry.dates.raw if entry.dates else "", ", ".join(entry.stack),
+             entry.notes.get("Team credit", "")]
     for c in claims:
         parts += [c.label, c.text, c.details, *c.conditions]
     return md_plain(" ".join(x for x in parts if x))
@@ -349,12 +369,18 @@ def guard(w: Writing, bank: Bank, spec: JobSpec, m: Match, sel: Selection) -> Ch
     def add(check: str, severity: str, message: str, bullet: str = "") -> None:
         report.findings.append(Finding(check=check, severity=severity, message=message, bullet=bullet[:80]))
 
-    layout = sel_mod.LAYOUTS[sel.paper]
+    layout = sel_mod.layout_for(sel.paper, sel.edits)
     if w.job != spec.key:
         add("job", "error", f"draft is for {w.job}, spec is {spec.key}")
     headlines = {spec.title, bank.profile.headline} | {t.headline for t in bank.tables.tracks}
-    if w.headline not in headlines:
+    # the posting title with its own typo corrected
+    typo_fixed = difflib.SequenceMatcher(None, w.headline.lower(), spec.title.lower()).ratio() >= 0.97
+    if w.headline not in headlines and not typo_fixed:
         add("headline", "error", f"headline {w.headline!r} is neither the posting title nor a record headline")
+    skill_terms = [x for v in w.skills.values() for x in v]
+    page_text = " ".join([w.headline, w.summary, *(b.text for b in w.bullets), *skill_terms])
+    if GRADE_WORDS.search(page_text):
+        add("grade", "error", "the page states a CGPA, GPA or grade; Kanishk never shows one on a resume")
     picks = {p.entry_id: p for p in sel.picks}
     all_picked = [c for p in sel.picks for c in p.claim_ids]
     if w.summary:

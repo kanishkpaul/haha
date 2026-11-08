@@ -322,8 +322,8 @@ def load_match(folder: Path) -> tuple[Match | None, CheckReport]:
 def _claim_line(bank: Bank, claim: Claim) -> str:
     entry = bank.entries[claim.entry_id]
     facts = []  # never the claim's proof: it must not sway a verdict
-    if entry.team:
-        facts.append("team work")
+    if entry.team_label:
+        facts.append(entry.team_label)
     if claim.conditions:
         facts.append("conditions: " + "; ".join(md_plain(c) for c in claim.conditions))
     return f"`{claim.id}` {claim_text(claim)}" + (f" *({'; '.join(facts)})*" if facts else "")
@@ -397,7 +397,7 @@ def write_pack(folder: Path, bank: Bank, spec: JobSpec, retrieval: Retrieval) ->
     appendix, current = [], None
     for entry, claim in eligible(bank):
         if entry.id != current:
-            appendix += ["", f"**{entry_label(entry)}**" + (" (team work)" if entry.team else "")]
+            appendix += ["", f"**{entry_label(entry)}**" + (f" ({entry.team_label})" if entry.team else "")]
             current = entry.id
         appendix.append(f"- {_claim_line(bank, claim)}")
     targets = [t.target for t in bank.tables.tracks]
