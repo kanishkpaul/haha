@@ -277,3 +277,8 @@ def test_em_dashes_become_hyphens_on_the_page():
     data = {"cv": {"name": "A — B", "sections": {"x": [{"name": "Sefai — Rust", "highlights": ["a — b"]}]}}}
     assert "—" not in str(render._hyphens(data))
     assert render._hyphens("Sefai — Rust") == "Sefai - Rust"
+
+
+def test_header_location_is_city_and_country(mini_bank):
+    mini_bank.profile.fields["Location"] = "Kolkata, West Bengal, India"
+    assert render._header(mini_bank, "AI Engineer")["location"] == "Kolkata, India"

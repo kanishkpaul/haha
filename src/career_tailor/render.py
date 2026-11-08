@@ -153,7 +153,8 @@ def _header(bank: Bank, headline: str) -> dict:
     fields = bank.profile.fields
     cv: dict = {"name": bank.profile.name, "headline": _escape(headline)}
     if fields.get("Location"):
-        cv["location"] = md_plain(fields["Location"])
+        parts = md_plain(fields["Location"]).split(", ")
+        cv["location"] = f"{parts[0]}, {parts[-1]}" if len(parts) > 2 else ", ".join(parts)  # city, country
     if fields.get("Primary email"):
         cv["email"] = md_plain(fields["Primary email"])
     if fields.get("Phone") and _valid_phone(md_plain(fields["Phone"])):
@@ -425,7 +426,7 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
 
 FONT_MIN, FONT_MAX = 9.5, 10.5
 # `dense: true` in plan.edits.yaml: a fuller page in the manner of a hand-set LaTeX resume
-DENSE = Design(font_size=9.0, line_spacing=0.45, margin=0.35, section_space=0.2, entry_space=0.16, bullet_space=0.02)
+DENSE = Design(font_size=8.5, line_spacing=0.36, margin=0.35, section_space=0.2, entry_space=0.14, bullet_space=0.03)
 DENSE_FONT = (8.5, 9.5)
 FILL_MIN = 0.7  # the last page should be at least this full
 CALIBRATION_FILE = "calibration.yaml"
