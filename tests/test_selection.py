@@ -192,3 +192,16 @@ def test_pinned_awards_lift_the_award_cap(mini_bank):
     if len(awards) > cap:
         sel = selection.solve(mini_bank, SPEC, MATCH, edits=PlanEdits(pin=awards[: cap + 1]))
         assert sum(p.entry_id in awards for p in sel.picks) == cap + 1
+
+
+def test_entry_edits_rename_and_move_an_entry(mini_bank):
+    eid = next(e.id for e in mini_bank.entries.values() if e.kind == "experience")
+    selection.apply_entry_edits(mini_bank, PlanEdits(entries={eid: {"name": "Ictus", "kind": "research"}}))
+    assert mini_bank.entries[eid].name == "Ictus" and mini_bank.entries[eid].kind == "research"
+    with pytest.raises(selection.SelectionError):
+        selection.apply_entry_edits(mini_bank, PlanEdits(entries={"NOPE-99": {"name": "x"}}))
+
+
+def test_lines_edit_sets_the_page_budget(mini_bank):
+    roomy = selection.solve(mini_bank, SPEC, MATCH, edits=PlanEdits(lines=90))
+    assert roomy.lines_budget >= 90 - 20  # fixed lines (header, education, skills) come off the top

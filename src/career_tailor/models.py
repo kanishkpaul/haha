@@ -360,12 +360,22 @@ class Match(Model):
     coverage: list[Coverage] = Field(default_factory=list)
 
 
+class EntryEdit(Model):
+    """One resume's override of an entry's heading or section (plan.edits.yaml `entries:`); the bank is untouched."""
+
+    name: str = ""
+    subtitle: str = ""
+    kind: EntryKind | None = None
+
+
 class PlanEdits(Model):
     """Your changes to a plan (plan.edits.yaml): entry or claim ids to force in or keep out."""
 
     pin: list[str] = Field(default_factory=list)
     ban: list[str] = Field(default_factory=list)
     pages: int | None = Field(default=None, ge=1, le=3)
+    entries: dict[str, EntryEdit] = Field(default_factory=dict)  # per-resume heading or section for an entry
+    lines: float | None = Field(default=None, gt=20, lt=120)  # lines per page, measured from a render; wins
     lead: list[str] = Field(default_factory=list)  # entry ids that open their section, in this order
     one_line: list[str] = Field(default_factory=list)  # claims to write as one-line bullets (budget: one line)
     dense: bool = False  # smaller type and margins, more lines and a fuller skills block (e.g. a profile resume)

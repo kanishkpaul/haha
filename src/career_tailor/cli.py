@@ -166,6 +166,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     )
     try:
         edits = selection.load_edits(folder)
+        b = selection.apply_entry_edits(b, edits)
         calibration = render.load_calibration(p.data / render.CALIBRATION_FILE)
         measured = calibration.get(selection.paper_for(spec))  # lines per page at the default design
         if measured and edits.dense:
@@ -203,7 +204,7 @@ def cmd_write(args: argparse.Namespace) -> int:
     ):
         print(f"warning: match.json or plan edits changed after the plan; rerun `tailor plan {folder.name}`",
               file=sys.stderr)  # fmt: skip
-    b = bank.load(p.bank)
+    b = selection.apply_entry_edits(bank.load(p.bank), selection.load_edits(folder))
     if reason := bank.stale_reason(b, p):
         print(f"warning: {reason}", file=sys.stderr)
     sel = Selection.model_validate_json(sel_path.read_text(encoding="utf-8"))
@@ -243,7 +244,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not spec_report.ok or spec is None or m is None or not sel_path.is_file() or not draft_path.is_file():
         print(f"error: no draft yet; run `tailor write {folder.name}` first", file=sys.stderr)
         return 1
-    b = bank.load(p.bank)
+    b = selection.apply_entry_edits(bank.load(p.bank), selection.load_edits(folder))
     if reason := bank.stale_reason(b, p):
         print(f"warning: {reason}", file=sys.stderr)
     sel = Selection.model_validate_json(sel_path.read_text(encoding="utf-8"))

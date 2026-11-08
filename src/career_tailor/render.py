@@ -425,7 +425,7 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
 
 FONT_MIN, FONT_MAX = 9.5, 10.5
 # `dense: true` in plan.edits.yaml: a fuller page in the manner of a hand-set LaTeX resume
-DENSE = Design(font_size=9.0, line_spacing=0.5, margin=0.4, section_space=0.25, entry_space=0.15, bullet_space=0.03)
+DENSE = Design(font_size=9.0, line_spacing=0.45, margin=0.35, section_space=0.2, entry_space=0.16, bullet_space=0.02)
 DENSE_FONT = (8.5, 9.5)
 FILL_MIN = 0.7  # the last page should be at least this full
 CALIBRATION_FILE = "calibration.yaml"

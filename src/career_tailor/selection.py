@@ -258,7 +258,7 @@ def solve(
     edits = edits or PlanEdits()
     pages = edits.pages or spec.pages
     paper = paper_for(spec)
-    layout = layout_for(paper, edits, lines_per_page)
+    layout = layout_for(paper, edits, edits.lines or lines_per_page)
     rules = Rules.for_pages(pages)
     if edits.dense:  # a fuller page carries more projects and one more award line
         rules = replace(rules, projects=(rules.projects[0], rules.projects[1] + 2),
@@ -293,7 +293,8 @@ def solve(
             continue
         model.add(chosen >= x[eid])
         kind = "catalog" if is_catalog(entry) else entry.kind
-        model.add(chosen <= rules.bullets[kind] * x[eid])
+        cap = max(rules.bullets[kind], sum(c in edits.pin for c in cids))  # pinned bullets lift the cap
+        model.add(chosen <= cap * x[eid])
         if kind in ("experience", "research", "engineering"):
             available = [c for c in cids if only is None or c in only]
             model.add(chosen >= min(2, len(available)) * x[eid])
@@ -446,6 +447,21 @@ def _excluded(bank: Bank, m: Match, edits: PlanEdits, picked: set[str]) -> dict[
 
 
 # ---------------------------------------------------------------- plan
+
+
+def apply_entry_edits(bank: Bank, edits: PlanEdits) -> Bank:
+    """The bank as this resume shows it: `entries:` renames an entry or moves it to another section."""
+    for eid, change in edits.entries.items():
+        entry = bank.entries.get(eid)
+        if entry is None:
+            raise SelectionError(f"plan.edits.yaml `entries:` names {eid}, which isn't in the bank")
+        if change.name:
+            entry.name = change.name
+        if change.subtitle:
+            entry.subtitle = change.subtitle
+        if change.kind:
+            entry.kind = change.kind
+    return bank
 
 
 def load_edits(folder: Path) -> PlanEdits:
