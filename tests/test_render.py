@@ -63,6 +63,14 @@ def test_markdown_characters_stay_literal():
     assert render._escape("2 * 3 = 6") == "2 \\* 3 = 6"
 
 
+def test_bold_spans_stay_bold_and_the_rest_stays_literal():
+    assert render._rich("Solved **70 of 400** tasks, *not* `x`") == "Solved **70 of 400** tasks, not x"
+    assert render._rich("**Top-250** finish (a_b)") == "**Top-250** finish (a\\_b)"
+    assert render._rich("plain [link](https://a.b)") == "plain link"
+    assert render._rich("up **from 50**; every") == "up **from 50;** every"  # Typst drops a ";" after #strong[]
+    assert render.bold_runs("Cut cost **40%** in a week") == [("Cut cost ", False), ("40%", True), (" in a week", False)]
+
+
 def test_page_and_typography(mini_bank, sel, draft):
     data = render.rendercv_input(mini_bank, SPEC, sel, draft, render.Design(font_size=9.5, margin=0.4))
     assert data["design"]["page"]["size"] == "a4" and data["design"]["page"]["top_margin"] == "0.4in"

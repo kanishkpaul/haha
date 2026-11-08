@@ -58,6 +58,8 @@ Postings can come from a Greenhouse, Ashby or Lever URL, a local `.md`/`.txt` fi
 pin: [EXP-01.b2, ENG-01]   # entries or claims that must appear
 ban: [ENG-14]              # entries or claims that must not
 pages: 1                   # override the page count
+lead: [EXP-02]              # these entries open their section, in this order
+one_line: [EXP-01.b2]      # budget these claims at one line each (tight impact bullets)
 dense: true                # ~9 pt type, 0.4 in margins, fuller skills block (profile resumes)
 ```
 

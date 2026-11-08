@@ -75,6 +75,33 @@ def _escape(text: str) -> str:
     return re.sub(r"([*_`\[\]#<>])", r"\\\1", md_plain(text))
 
 
+_BOLD_SPAN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _edges(fn, part: str) -> str:
+    """Apply fn to the text of `part` but keep one space where it had leading or trailing whitespace."""
+    core = fn(part)
+    if not core:
+        return " " if part[:1].isspace() else ""
+    return (" " if part[:1].isspace() else "") + core + (" " if part[-1:].isspace() else "")
+
+
+def _rich(text: str) -> str:
+    """Like _escape, but `**bold**` spans stay bold (Kanishk, 8 Nov 2026: key results in bold)."""
+    parts = _BOLD_SPAN.split(" ".join(text.split()))  # odd indexes are the bold spans
+    for i in range(1, len(parts) - 1, 2):  # Typst eats a ";" right after #strong[...]: keep it inside the span
+        if parts[i + 1].startswith(";"):
+            parts[i], parts[i + 1] = parts[i] + ";", parts[i + 1][1:]
+    return "".join(f"**{_escape(p)}**" if i % 2 else _edges(_escape, p) for i, p in enumerate(parts)).strip()
+
+
+def bold_runs(text: str) -> list[tuple[str, bool]]:
+    """(text, bold) runs of a bullet for the .docx, other inline Markdown stripped."""
+    parts = _BOLD_SPAN.split(" ".join(text.split()))
+    runs = [(md_plain(p) if i % 2 else _edges(md_plain, p), bool(i % 2)) for i, p in enumerate(parts)]
+    return [(t, b) for t, b in runs if t]
+
+
 def _date(value: str | None) -> str | None:
     if not value:
         return None
@@ -165,7 +192,7 @@ def rendercv_input(
     design = design or Design()
     bullets: dict[str, list[str]] = {}
     for b in w.bullets:
-        bullets.setdefault(b.entry_id, []).append(_escape(b.text))
+        bullets.setdefault(b.entry_id, []).append(_rich(b.text))
     today = today or date.today()
     sections: dict[str, list] = {"Education": _education(bank)}
     for pick in sel.picks:
@@ -519,7 +546,9 @@ def write_docx(path: Path, bank: Bank, sel: Selection, w: Writing, design: Desig
             p.add_run(f"\t{right}")
 
     def bullet(text: str) -> None:
-        doc.add_paragraph(md_plain(text), style="List Bullet")
+        p = doc.add_paragraph(style="List Bullet")
+        for run, is_bold in bold_runs(text):
+            p.add_run(run).bold = is_bold or None
 
     title = doc.add_heading(bank.profile.name, level=1)
     title.paragraph_format.space_after = Pt(0)

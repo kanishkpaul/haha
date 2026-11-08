@@ -28,6 +28,8 @@ def test_line_costs(mini_bank):
     assert selection.claim_lines(long, mini_bank.entries["ENG-01"], layout) == layout.max_bullet_lines
     award = mini_bank.entries["AWD-01"]
     assert selection.claim_lines(award.claims[0], award, layout) == 1
+    short = selection.layout_for("letter", PlanEdits(one_line=["ENG-01.b2"]))
+    assert selection.claim_lines(long, mini_bank.entries["ENG-01"], short) == 1  # `one_line:` budgets it at one
 
 
 def test_layout_budget():
@@ -174,3 +176,19 @@ def test_dense_plan_has_a_bigger_budget_and_looser_limits(mini_bank):
     dense = selection.solve(mini_bank, SPEC, MATCH, PlanEdits(dense=True))
     assert dense.lines_budget > plain.lines_budget and dense.edits.dense
     assert len(dense.picks) >= len(plain.picks)
+
+
+def test_lead_opens_a_section(mini_bank):
+    plain = selection.solve(mini_bank, SPEC, MATCH)
+    exp = [p.entry_id for p in plain.picks if p.section == "Experience"]
+    assert len(exp) > 1
+    led = selection.solve(mini_bank, SPEC, MATCH, edits=PlanEdits(lead=[exp[-1]]))
+    assert [p.entry_id for p in led.picks if p.section == "Experience"][0] == exp[-1]
+
+
+def test_pinned_awards_lift_the_award_cap(mini_bank):
+    awards = [e.id for e in mini_bank.entries.values() if e.kind in selection.ONE_LINE_KINDS]
+    cap = selection.Rules.for_pages(1).awards[1]
+    if len(awards) > cap:
+        sel = selection.solve(mini_bank, SPEC, MATCH, edits=PlanEdits(pin=awards[: cap + 1]))
+        assert sum(p.entry_id in awards for p in sel.picks) == cap + 1

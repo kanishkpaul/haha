@@ -61,6 +61,7 @@ class Layout:
     education: float = 2.0  # degree line and dates/grade line
     skills: float = 3.0  # skills lines (section heading counted separately)
     max_bullet_lines: int = 2
+    one_line: frozenset[str] = frozenset()  # claim ids budgeted at one line (`one_line:` in plan.edits.yaml)
 
     def budget(self, pages: int) -> float:
         return self.lines_per_page * pages
@@ -92,6 +93,8 @@ def layout_for(paper: str, edits: PlanEdits | None = None, lines_per_page: float
             chars_per_line=round(layout.chars_per_line * DENSE_CHARS),
             skills=DENSE_SKILL_LINES,
         )
+    if edits is not None and edits.one_line:
+        layout = replace(layout, one_line=frozenset(edits.one_line))
     if lines_per_page:
         layout = replace(layout, lines_per_page=lines_per_page)
     return layout
@@ -111,7 +114,7 @@ def display_text(claim: Claim) -> str:
 
 def claim_lines(claim: Claim, entry: Entry, layout: Layout) -> int:
     """Lines a claim takes as a bullet (capped: M5 writes to this budget), or one line for an award."""
-    if entry.kind in ONE_LINE_KINDS:
+    if entry.kind in ONE_LINE_KINDS or claim.id in layout.one_line:
         return 1
     return min(math.ceil(len(display_text(claim)) / layout.chars_per_line), layout.max_bullet_lines)
 
@@ -266,6 +269,12 @@ def solve(
     unknown = [r for r in edits.pin + edits.ban if r not in claims and r not in entries]
     if unknown:
         raise SelectionError(f"plan.edits.yaml names items that can't go on a resume: {', '.join(unknown)}")
+    # A pin is the owner's call, so it lifts the count caps (Kanishk, 8 Nov 2026: every award he pins goes on)
+    pinned = {claims[p].entry_id if p in claims else p for p in edits.pin}
+    n_awards = sum(1 for eid in pinned if eid in entries and entries[eid].kind in ONE_LINE_KINDS)
+    n_projects = sum(1 for eid in pinned if eid in entries and entries[eid].kind in ("research", "engineering"))
+    rules = replace(rules, awards=(rules.awards[0], max(rules.awards[1], n_awards)),
+                    projects=(rules.projects[0], max(rules.projects[1], n_projects)))  # fmt: skip
 
     model = cp_model.CpModel()
     x = {eid: model.new_bool_var(f"x_{eid}") for eid in entries}
@@ -403,6 +412,8 @@ def _selection(bank, spec, m, edits, pages, layout, budget, picked, used) -> Sel
         lines = {c: claim_lines(bank.claim(c), entry, layout) for c in cids}
         picks.append(Pick(entry_id=entry.id, section=SECTIONS[entry.kind], claim_ids=cids, lines=lines, covers=covers))
     picks.sort(key=lambda p: _sort_key(bank.entries[p.entry_id]), reverse=True)  # newest first within a section
+    lead = edits.lead  # `lead:` in plan.edits.yaml: these entries open their section, in this order
+    picks.sort(key=lambda p: lead.index(p.entry_id) if p.entry_id in lead else len(lead))
     picks.sort(key=lambda p: SECTION_ORDER.index(p.section))
     covered = {}
     for cov in m.coverage:

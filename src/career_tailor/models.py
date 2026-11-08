@@ -366,6 +366,8 @@ class PlanEdits(Model):
     pin: list[str] = Field(default_factory=list)
     ban: list[str] = Field(default_factory=list)
     pages: int | None = Field(default=None, ge=1, le=3)
+    lead: list[str] = Field(default_factory=list)  # entry ids that open their section, in this order
+    one_line: list[str] = Field(default_factory=list)  # claims to write as one-line bullets (budget: one line)
     dense: bool = False  # smaller type and margins, more lines and a fuller skills block (e.g. a profile resume)
 
 
