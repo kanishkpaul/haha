@@ -41,6 +41,7 @@ from .write import contact_line, education_lines, entry_link
 RENDER_DIR = f"{WORK_DIR}/render"
 YAML_FILE = "resume.yaml"
 HEADING_CHARS = 88  # an entry heading longer than this at 10 pt wraps beside the date column; the link is dropped
+LINK_COLOR = "rgb(0, 72, 160)"  # a plain link blue that still prints dark on paper
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
@@ -54,6 +55,9 @@ class Design:
     section_space: float = 0.35  # cm above each section title
     entry_space: float = 0.25  # cm between entries
     bullet_space: float = 0.06  # cm between bullets
+    margin_y: float | None = None  # in, top and bottom when they differ from the sides
+    text_space: float | None = None  # cm between award lines when it differs from bullet_space
+    skills_space: float | None = None  # em between Skills lines (RenderCV has no setting for it; see _polish_typst)
 
     def step(self, direction: int) -> "Design":
         """One notch tighter (-1) or looser (+1): type, leading and the space around sections and entries."""
@@ -186,6 +190,33 @@ def _education(bank: Bank) -> list[dict]:
     return [item]
 
 
+def heading_link(bank: Bank, entry) -> tuple[str, str]:
+    """(shown text, URL) for an entry heading: the candidate's own public repo, or, for an experience entry, the
+    public contribution that proves it (a merged pull request). ("", "") when there is none."""
+    text = entry_link(bank, entry)
+    if not text and entry.kind == "experience":
+        for url in entry.public_links:
+            found = re.match(r"https?://(?:www\.)?(github\.com/[\w.-]+/[\w.-]+/pull/\d+)/?$", url)
+            if found:
+                text = found.group(1)
+                break
+    return (text, f"https://{text}") if text else ("", "")
+
+
+def _heading_limit(paper: str, d: Design) -> float:
+    """Characters an entry heading holds before it wraps, scaled from the 10 pt, half-inch measure."""
+    width = PAGE_INCHES[paper][0]
+    return HEADING_CHARS * (10 / d.font_size) * (width - 2 * d.margin) / (width - 1.0)
+
+
+def _with_link(base: str, plain: str, bank: Bank, entry, limit: float) -> str:
+    """`base` (already escaped) plus " · " and the heading link, when the heading still fits on one line."""
+    text, url = heading_link(bank, entry)
+    if not text or len(f"{entry.name} — {plain} · {text}") + 2 > limit:  # +2: the external-link icon
+        return base
+    return f"{base} · [{text}]({url})" if base else f"[{text}]({url})"
+
+
 def rendercv_input(
     bank: Bank, spec: JobSpec, sel: Selection, w: Writing, design: Design | None = None, today: date | None = None
 ) -> dict:
@@ -196,19 +227,19 @@ def rendercv_input(
         bullets.setdefault(b.entry_id, []).append(_rich(b.text))
     today = today or date.today()
     sections: dict[str, list] = {"Education": _education(bank)}
+    limit = _heading_limit(sel.paper, design)
     for pick in sel.picks:
         entry = bank.entries[pick.entry_id]
         items = sections.setdefault(pick.section, [])
         if entry.kind in sel_mod.ONE_LINE_KINDS:
             items += [{"bullet": text} for text in bullets.get(entry.id, [])]
         elif entry.kind == "experience":
-            items.append({"company": _escape(entry.name), "position": _escape(entry.subtitle), **_dates(entry),
+            position = _with_link(_escape(entry.subtitle), entry.subtitle, bank, entry, limit)
+            items.append({"company": _escape(entry.name), "position": position, **_dates(entry),
                           "highlights": bullets.get(entry.id, [])})  # fmt: skip
         else:
-            link = entry_link(bank, entry)
-            if link and len(f"{entry.name} — {entry.subtitle} · {link}") > HEADING_CHARS:
-                link = ""  # a wrapped heading costs a line; the project name and role matter more than the URL
-            summary = " · ".join(x for x in (_escape(entry.subtitle), link) if x)
+            # a wrapped heading costs a line, so the link only goes on when the heading still fits
+            summary = _with_link(_escape(entry.subtitle), entry.subtitle, bank, entry, limit)
             items.append({"name": _escape(entry.name), "summary": summary or None, **_dates(entry),
                           "highlights": bullets.get(entry.id, [])})  # fmt: skip
     if w.skills:
@@ -225,8 +256,8 @@ def _design(paper: str, d: Design) -> dict:
         "theme": "engineeringresumes",
         "page": {
             "size": "us-letter" if paper == "letter" else "a4",
-            "top_margin": f"{d.margin}in",
-            "bottom_margin": f"{d.margin}in",
+            "top_margin": f"{d.margin_y or d.margin}in",
+            "bottom_margin": f"{d.margin_y or d.margin}in",
             "left_margin": f"{d.margin}in",
             "right_margin": f"{d.margin}in",
             "show_footer": False,
@@ -241,7 +272,9 @@ def _design(paper: str, d: Design) -> dict:
                 "connections": f"{d.font_size}pt",
             },
         },
-        "links": {"underline": False},
+        # Kanishk, 8 Nov 2026: links must look clickable: colored, underlined, with the external-link icon
+        "links": {"underline": True, "show_external_link_icon": True},
+        "colors": {"links": LINK_COLOR},
         "header": {
             "connections": {
                 "phone_number_format": "international",
@@ -249,6 +282,7 @@ def _design(paper: str, d: Design) -> dict:
                 "show_icons": False,
                 "display_urls_instead_of_usernames": True,
                 "separator": "|",
+                "space_between_connections": "0.12cm",  # 0.5 cm pushed the last link onto its own line
             },
             "space_below_name": "0.3cm",
             "space_below_headline": "0.25cm",
@@ -257,7 +291,7 @@ def _design(paper: str, d: Design) -> dict:
         "section_titles": {"type": "with_full_line", "space_above": f"{d.section_space}cm", "space_below": "0.15cm"},
         "sections": {
             "space_between_regular_entries": f"{d.entry_space}cm",
-            "space_between_text_based_entries": f"{d.bullet_space}cm",
+            "space_between_text_based_entries": f"{d.text_space or d.bullet_space}cm",
         },
         "entries": {"highlights": {"space_above": f"{d.bullet_space}cm", "space_between_items": f"{d.bullet_space}cm"}},
         "templates": {
@@ -291,19 +325,44 @@ def _hyphens(value):
     return value
 
 
-def render_pdf(folder: Path, data: dict, name: str) -> Path:
-    """Write the RenderCV input and typeset it. Returns the PDF path."""
+_HEADER_LINK_OFF = "if-underline: false, if-color: false"
+_COMPILE = ("import pathlib, sys; from rendercv.renderer.pdf_png import get_typst_compiler; "
+            "t = pathlib.Path(sys.argv[1]); "
+            "get_typst_compiler(None, t.parent).compile(input=t, format='pdf', output=pathlib.Path(sys.argv[2]))")
+
+
+def _polish_typst(src: str, skills_space: float | None = None) -> str:
+    """Two things RenderCV's theme can't be told: header links shown as links (colored and underlined, like
+    every other link on the page; Kanishk, 8 Nov 2026), and room between the Skills lines."""
+    start = src.find("#connections(")
+    if start != -1:
+        end = src.find("\n)", start)
+        src = src[:start] + src[start:end].replace(_HEADER_LINK_OFF, "if-underline: true, if-color: true") + src[end:]
+    if skills_space:
+        src = re.sub(r"^(== Skills\n)", rf"\1#set par(spacing: {skills_space}em)\n", src, count=1, flags=re.M)
+    return src
+
+
+def render_pdf(folder: Path, data: dict, name: str, design: Design | None = None) -> Path:
+    """Write the RenderCV input, let RenderCV write the Typst, polish it and typeset it. Returns the PDF path."""
     data = _hyphens(data)
     out = folder / RENDER_DIR
     out.mkdir(parents=True, exist_ok=True)
     source = out / YAML_FILE
     source.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    pdf = out / name
-    cmd = [sys.executable, "-m", "rendercv", "render", str(source), "--pdf-path", str(pdf),
-           "--typst-path", str(out / "resume.typ"), "-nomd", "-nohtml", "-nopng"]  # fmt: skip
+    pdf, typ = out / name, out / "resume.typ"
+    cmd = [sys.executable, "-m", "rendercv", "render", str(source), "--typst-path", str(typ),
+           "-nopdf", "-nomd", "-nohtml", "-nopng"]  # fmt: skip
     done = subprocess.run(cmd, capture_output=True, text=True, cwd=out)
-    if done.returncode != 0 or not pdf.is_file():
+    if done.returncode != 0 or not typ.is_file():
         raise RuntimeError(f"RenderCV failed: {(done.stderr or done.stdout).strip()[-1500:]}")
+    typ.write_text(_polish_typst(typ.read_text(encoding="utf-8"), design.skills_space if design else None),
+                   encoding="utf-8")  # fmt: skip
+    pdf.unlink(missing_ok=True)
+    done = subprocess.run([sys.executable, "-c", _COMPILE, str(typ), str(pdf)], capture_output=True, text=True,
+                          cwd=out)  # fmt: skip
+    if done.returncode != 0 or not pdf.is_file():
+        raise RuntimeError(f"Typst failed: {(done.stderr or done.stdout).strip()[-1500:]}")
     return pdf
 
 
@@ -426,7 +485,9 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
 
 FONT_MIN, FONT_MAX = 9.5, 10.5
 # `dense: true` in plan.edits.yaml: a fuller page in the manner of a hand-set LaTeX resume
-DENSE = Design(font_size=8.5, line_spacing=0.36, margin=0.35, section_space=0.2, entry_space=0.14, bullet_space=0.03)
+# 8 Nov 2026: wider top and bottom margins and spaced-out Skills, paid for with slightly tighter leading and sides
+DENSE = Design(font_size=8.5, line_spacing=0.3, margin=0.3, section_space=0.18, entry_space=0.12, bullet_space=0.03,
+               margin_y=0.55, text_space=0.05, skills_space=0.75)
 DENSE_FONT = (8.5, 9.5)
 FILL_MIN = 0.7  # the last page should be at least this full
 CALIBRATION_FILE = "calibration.yaml"
@@ -462,7 +523,7 @@ def fit(folder: Path, bank: Bank, spec: JobSpec, m: Match, sel: Selection, w: Wr
     name = pdf_name(bank)
     direction = 0  # the way the design last moved, so it never swings back and forth
     for _ in range(max_renders):
-        pdf = render_pdf(folder, rendercv_input(bank, spec, sel, w, design, today), name)
+        pdf = render_pdf(folder, rendercv_input(bank, spec, sel, w, design, today), name, design)
         layout = read_pdf(pdf)
         used = _content_pages(layout, design)
         if design == Design() and measured is None:
@@ -527,7 +588,8 @@ def write_docx(path: Path, bank: Bank, sel: Selection, w: Writing, design: Desig
     width, height = PAGE_INCHES[sel.paper]
     section.page_width, section.page_height = Inches(width), Inches(height)
     for side in ("top_margin", "bottom_margin", "left_margin", "right_margin"):
-        setattr(section, side, Inches(design.margin))
+        vertical = side in ("top_margin", "bottom_margin")
+        setattr(section, side, Inches((design.margin_y or design.margin) if vertical else design.margin))
     normal = doc.styles["Normal"]
     normal.font.size = Pt(design.font_size)
     normal.paragraph_format.space_after = Pt(1)
@@ -573,7 +635,7 @@ def write_docx(path: Path, bank: Bank, sel: Selection, w: Writing, design: Desig
             heading(current)
         if entry.kind not in sel_mod.ONE_LINE_KINDS:
             dates = entry.dates.display if entry.dates and entry.dates.display else ""
-            link = entry_link(bank, entry)
+            link, _ = heading_link(bank, entry)
             role = " — ".join(x for x in (entry.subtitle, link) if x)
             line(f" — {role}" if role else "", dates, bold=md_plain(entry.name))
         for text in bullets.get(entry.id, []):

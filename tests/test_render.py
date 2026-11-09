@@ -282,3 +282,12 @@ def test_em_dashes_become_hyphens_on_the_page():
 def test_header_location_is_city_and_country(mini_bank):
     mini_bank.profile.fields["Location"] = "Kolkata, West Bengal, India"
     assert render._header(mini_bank, "AI Engineer")["location"] == "Kolkata, India"
+
+
+def test_polish_shows_header_links_and_spaces_skills():
+    src = ('#connections(\n  [#link("https://a.b", icon: false, if-underline: false, if-color: false)[a.b]],\n)\n'
+           '== Skills\n#strong[Languages:] Python\n')
+    out = render._polish_typst(src, 0.75)
+    assert "if-underline: true, if-color: true" in out and "if-underline: false" not in out
+    assert "== Skills\n#set par(spacing: 0.75em)\n" in out
+    assert render._polish_typst(src).count("set par") == 0  # no spacing asked, none added
