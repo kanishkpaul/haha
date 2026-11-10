@@ -8,7 +8,7 @@
 
 ![status](https://img.shields.io/badge/status-v1.0%20it%20works-brightgreen)
 ![python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
-![tests](https://img.shields.io/badge/tests-264%20passing-success)
+![tests](https://img.shields.io/badge/tests-295%20passing-success)
 ![ats](https://img.shields.io/badge/ATS%20parse%20check-100%2F100-success)
 ![fabrication](https://img.shields.io/badge/made--up%20claims-0-brightgreen)
 ![humility](https://img.shields.io/badge/humility-on%20page%202-orange)
@@ -43,11 +43,28 @@ It gives you a resume that:
 
 ## 🚀 Quick start
 
+Install [Git](https://git-scm.com/) and [uv](https://docs.astral.sh/uv/). The app uses Python 3.13.
+
 ```bash
-uv sync                                                                  # once
-uv run tailor bank                                                       # compile the career record
-uv run tailor run https://job-boards.greenhouse.io/anthropic/jobs/5198255008
-uv run tailor status                                                     # what's next, for every job
+git clone https://github.com/kanishkpaul/haha.git
+cd haha
+uv sync --locked
+```
+
+To try the evidence bank without a career record of your own, use the [synthetic fixture](tests/fixtures/mini_record.md) and a scratch directory.
+
+```bash
+HAHA_DATA_DIR="$(mktemp -d)" HAHA_CAREER_RECORD="$PWD/tests/fixtures/mini_record.md" \
+  uv run --locked tailor bank
+```
+
+For a real application, point haha at your own Markdown record and a saved job description or a supported job URL. Follow the ATS setup below before running the full workflow.
+
+```bash
+export HAHA_CAREER_RECORD=/absolute/path/to/career-record.md
+uv run --locked tailor bank
+uv run --locked tailor run path/to/job-posting.md
+uv run --locked tailor status
 ```
 
 `tailor run` does everything it can and stops when it needs a brain or a human:
@@ -126,7 +143,7 @@ scripts/stop-servers.sh
 ## 🗺️ Where things live
 
 ```text
-haha/                     code only, safe to open-source
+haha/                     source code and synthetic test fixtures
 ├── src/career_tailor/    one module per stage, plus cli.py
 ├── tests/                run on a synthetic record; `local` tests use the real one
 ├── docs/                 workflow guide, build plan, resume research
@@ -156,20 +173,32 @@ The career record is read from `../outputs/KANISHK_PAUL_MASTER_CAREER_RECORD.md`
 5. **Strongest reasonable version, always.** Modesty is great at dinner parties and terrible at the resume screen.
 6. **Don't edit `vendor/`.** We borrow Resume-Matcher, we don't remodel its kitchen.
 
-## 🧑‍🔧 Fresh clone?
+## 🧑‍🔧 Set up the ATS check
+
+The evidence bank and synthetic tests run on their own. For the full workflow, initialise the pinned Resume-Matcher submodule and set up its backend.
 
 ```bash
-git clone --recurse-submodules https://github.com/kanishkpaul/haha.git
-cd haha && uv sync
+git submodule update --init --depth 1 vendor/resume-matcher
+cd vendor/resume-matcher/apps/backend
+uv sync
+test -f .env || cp .env.example .env
+uv run playwright install chromium
+cd ../../../../
 ```
 
-For Resume-Matcher's parse check and score, follow `vendor/resume-matcher/SETUP.md`: `uv sync` and `uv run playwright install chromium` in its backend, and `LLM_PROVIDER=agent` in `vendor/resume-matcher/apps/backend/.env`. In this house, Claude does the writing and Resume-Matcher does the judging.
+Set `LLM_PROVIDER=agent` in `vendor/resume-matcher/apps/backend/.env`. In this house, Claude does the writing and Resume-Matcher does the judging. [Resume-Matcher setup guide](https://github.com/srbhr/Resume-Matcher/blob/dcd0962656e3e1ac2b4490689159362f9d48cd32/SETUP.md)
+
+Run `uv run --locked pytest -m 'not local'` from the root of haha to test with synthetic data.
 
 ## 🙏 Standing on the shoulders of
 
 - [**Resume-Matcher**](https://github.com/srbhr/Resume-Matcher): parse-checks and scores. Does the robot's job so we don't have to guess what the robot thinks.
 - [**RenderCV**](https://github.com/rendercv/rendercv): typeset PDFs without having to learn LaTeX (again).
 - [**OR-Tools**](https://developers.google.com/optimization): for deciding which of 106 projects get a seat on the bus.
+
+## License
+
+haha's original code is licensed under the [MIT License](LICENSE). The Resume-Matcher submodule has its own [Apache 2.0 license](https://github.com/srbhr/Resume-Matcher/blob/dcd0962656e3e1ac2b4490689159362f9d48cd32/LICENSE).
 
 ---
 
