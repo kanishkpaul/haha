@@ -485,9 +485,9 @@ def extraction_findings(layout: PdfLayout, expected: list[str], contact: list[st
 
 FONT_MIN, FONT_MAX = 9.5, 10.5
 # `dense: true` in plan.edits.yaml: a fuller page in the manner of a hand-set LaTeX resume
-# 8 Nov 2026: wider top and bottom margins and spaced-out Skills, paid for with slightly tighter leading and sides
-DENSE = Design(font_size=8.5, line_spacing=0.3, margin=0.3, section_space=0.18, entry_space=0.12, bullet_space=0.03,
-               margin_y=0.55, text_space=0.05, skills_space=0.75)
+# 10 Nov 2026: a little more leading in the bullets (0.36 em), top and bottom 0.45 in, spaced Skills, 0.3 in sides
+DENSE = Design(font_size=8.5, line_spacing=0.36, margin=0.3, section_space=0.18, entry_space=0.12, bullet_space=0.03,
+               margin_y=0.45, text_space=0.05, skills_space=0.6)
 DENSE_FONT = (8.5, 9.5)
 FILL_MIN = 0.7  # the last page should be at least this full
 CALIBRATION_FILE = "calibration.yaml"
